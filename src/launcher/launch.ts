@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { outcomeHooks } from "../outcome/hooks-config.js";
+import { outcomeHooks, type HookTransport } from "../outcome/hooks-config.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,10 +13,17 @@ import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
 import { resolveBin, resolveClaude, realResolveIO, type ResolvedBin } from "./claude-bin.js";
 import { startLaya, type LayaServer } from "./laya.js";
 import { startFrontDoor } from "./front-door.js";
-import { hasOwnStatusLine, injectSettings, realInjectIO } from "./settings-inject.js";
+import { hasOwnStatusLine, injectSettings, readSettingsFile, realInjectIO, sandboxEnabled, userSettingsFromArgv } from "./settings-inject.js";
 import { Supervisor, type Timings } from "./supervisor.js";
 import { assessVersion, describeVerdict, probeClaudeVersion } from "./version.js";
 import { openWorkerLog, spawnWorkerProcess } from "./worker-process.js";
+
+/**
+ * Claude Code's managed settings file, the highest-precedence source of `sandbox.enabled`.
+ * ponytail: only this one path is checked, not an MDM/plist source or a drop-in directory; a miss there leaves
+ * `sandboxed` at whatever the other sources say, and `REFLEX_HOOKS=command` covers that case regardless.
+ */
+const MANAGED_SETTINGS = process.platform === "darwin" ? "/Library/Application Support/ClaudeCode/managed-settings.json" : "/etc/claude-code/managed-settings.json";
 
 export interface LaunchIO {
   readonly env: NodeJS.ProcessEnv;
@@ -98,7 +105,7 @@ const workerProbe = async (port: number): Promise<boolean> => {
   }
 };
 
-/** bin/reflex.js, from src/launcher or dist/launcher alike: what the injected status line runs. */
+/** bin/reflex.js, from src/launcher or dist/launcher alike: what the injected status line and hook relay run. */
 const REFLEX_BIN = fileURLToPath(new URL("../../bin/reflex.js", import.meta.url));
 
 /** Starts claude behind the reflex proxy (or plain, per mode) and resolves with claude's exit code. */
@@ -171,11 +178,21 @@ export async function launch(argv: readonly string[], io: LaunchIO = realLaunchI
     status: () => ({ supervisor: supervisor.snapshot(), mode: effective.mode }),
   });
 
-  // http hooks for outcome capture go to the front door, which answers 204 even when the worker is down.
+  // Hooks for outcome capture go to the front door, which answers 204 even when the worker is down.
   const claudeDir = io.env["CLAUDE_CONFIG_DIR"] || path.join(io.homedir ?? os.homedir(), ".claude");
-  const ownStatusLine = hasOwnStatusLine([path.join(claudeDir, "settings.json"), path.join(io.cwd, ".claude", "settings.json"), path.join(io.cwd, ".claude", "settings.local.json")], (f) => fs.readFileSync(f, "utf8"));
+  const read = (f: string): string => fs.readFileSync(f, "utf8");
+  const settingsFiles = [path.join(claudeDir, "settings.json"), path.join(io.cwd, ".claude", "settings.json"), path.join(io.cwd, ".claude", "settings.local.json")];
+  const ownStatusLine = hasOwnStatusLine(settingsFiles, read);
   const statusLine = config.statusline && !ownStatusLine ? { type: "command", command: `"${process.execPath}" "${REFLEX_BIN}" statusline`, padding: 0, refreshInterval: 2 } : undefined;
-  const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, hooks: outcomeHooks(door.port), ...(statusLine ? { statusLine } : {}) }, realInjectIO(io.cwd));
+  // Under Claude Code's sandbox every http hook to 127.0.0.1 comes back "HTTP 403" and never reaches the door
+  // (docs/observations.md); a command hook does. REFLEX_HOOKS=auto relays the hooks through `reflex hook-relay` there.
+  // They are not optional: without the UserPromptSubmit hook a plain-string prompt is never a new turn, so it is not routed.
+  const sandboxed = sandboxEnabled([...settingsFiles.map((f) => readSettingsFile(f, read)), userSettingsFromArgv(argv, io.cwd, read), readSettingsFile(MANAGED_SETTINGS, read)]);
+  const transport: HookTransport | null =
+    config.hooks === "off" ? null : config.hooks === "http" || (config.hooks === "auto" && !sandboxed) ? { kind: "http" } : { kind: "command", relay: `"${process.execPath}" "${REFLEX_BIN}" hook-relay` };
+  if (transport === null) logFile?.write(`${new Date().toISOString()} [info] launcher: outcome hooks not injected (REFLEX_HOOKS=off)\n`);
+  else if (transport.kind === "command") logFile?.write(`${new Date().toISOString()} [info] launcher: outcome hooks relayed through a command hook (${config.hooks === "command" ? "REFLEX_HOOKS=command" : "sandbox.enabled: Claude Code refuses http hooks to 127.0.0.1 under its sandbox"})\n`);
+  const injection = injectSettings(argv, { env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${door.port}` }, ...(transport ? { hooks: outcomeHooks(door.port, transport) } : {}), ...(statusLine ? { statusLine } : {}) }, realInjectIO(io.cwd));
   if (injection.warning) warn(injection.warning);
   if (io.env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"]) warn("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS is set: MCP tool search stays off, so every MCP tool schema is sent on every request");
   try {

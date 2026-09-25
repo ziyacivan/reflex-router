@@ -4,6 +4,9 @@ import path from "node:path";
 import { CORRECTION_SCORE_CAP } from "./outcome/heuristics.js";
 
 export const MODES = ["route", "shadow", "off"] as const;
+/** REFLEX_HOOKS: whether the outcome hooks are injected, and how they reach the door (see `hooks` below). */
+export const HOOKS_MODES = ["auto", "http", "command", "off"] as const;
+export type HooksMode = (typeof HOOKS_MODES)[number];
 export type Mode = (typeof MODES)[number];
 
 export const BACKENDS = ["jev", "laya"] as const;
@@ -130,6 +133,15 @@ export interface Config {
   /** REFLEX_STATUSLINE (default on): give claude a status line showing the model reflex sent, unless the user has their own. */
   readonly statusline: boolean;
   /**
+   * REFLEX_HOOKS (default `auto`): how the outcome hooks (src/outcome/hooks-config.ts) reach the door. `http` hooks,
+   * except under Claude Code's sandbox (`sandbox.enabled` in the session's settings), where Claude Code answers every
+   * http hook to 127.0.0.1 with "HTTP 403" and `auto` injects `command` hooks running `reflex hook-relay` instead
+   * (docs/observations.md, 2026-09-24). Routing depends on them too: the UserPromptSubmit hook is what lets a plain-string
+   * prompt count as a new turn, so without hooks only a session's first prompt is judged. `http` and `command` force a
+   * transport; `off` injects nothing.
+   */
+  readonly hooks: HooksMode;
+  /**
    * REFLEX_ESCALATE=1: let an outcome signal raise the tier of a conversation's next new turn (src/worker/escalation.ts).
    * Off by default, and the only setting that lets a past event change a future request. It may only raise, never
    * above the tier the client asked for, and never for pinned continuations or side calls.
@@ -217,7 +229,7 @@ export const SETTING_NAMES: readonly string[] = [
   "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
-  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_EFFORT", "REFLEX_EFFORT_UP", "REFLEX_EFFORT_MIDTURN", "REFLEX_EFFORT_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
+  "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_HOOKS", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_EFFORT", "REFLEX_EFFORT_UP", "REFLEX_EFFORT_MIDTURN", "REFLEX_EFFORT_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL",
 ];
 
@@ -374,6 +386,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     switchBreakevenRequests: parseBoundedInt(setting(env, "REFLEX_SWITCH_BREAKEVEN_REQUESTS"), 10, 0, 1000, "REFLEX_SWITCH_BREAKEVEN_REQUESTS", errors),
     delegate: truthy(setting(env, "REFLEX_DELEGATE")),
     statusline: !falsy(setting(env, "REFLEX_STATUSLINE")),
+    hooks: parseEnum(setting(env, "REFLEX_HOOKS"), HOOKS_MODES, "auto", "REFLEX_HOOKS", errors),
     escalate: parseEscalateMode(setting(env, "REFLEX_ESCALATE"), errors),
     escalateTarget: parseEnum(setting(env, "REFLEX_ESCALATE_TARGET"), ESCALATE_TARGETS, "requested", "REFLEX_ESCALATE_TARGET", errors),
     abFraction: parseBoundedNumber(setting(env, "REFLEX_AB"), 0, 0, 1, "REFLEX_AB", errors),
@@ -392,5 +405,6 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
   if (config.effortMidturn && !config.effort) warnings.push("REFLEX_EFFORT_MIDTURN has no effect without REFLEX_EFFORT=1");
   if (config.effortAbFraction > 0 && !config.effort) warnings.push("REFLEX_EFFORT_AB has no effect without REFLEX_EFFORT=1");
   if (config.delegate && mode === "off") warnings.push("REFLEX_DELEGATE has no effect with REFLEX_MODE=off (the hint travels through reflex's hooks)");
+  if (config.delegate && config.hooks === "off") warnings.push("REFLEX_DELEGATE has no effect with REFLEX_HOOKS=off (the hint travels through reflex's hooks)");
   return { ok: true, config, warnings };
 }

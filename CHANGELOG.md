@@ -4,7 +4,27 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- **Under Claude Code's sandbox every outcome hook failed with "HTTP 403", and only a session's first prompt was
+  routed.** With `sandbox.enabled` in the session's settings, Claude Code answers each http hook to `127.0.0.1` with
+  `HTTP 403 from http://127.0.0.1:<port>/__reflex/hook` — the door never saw the request. That cost more than outcome
+  capture: since 2.1.278 a typed prompt is a plain string, and a plain string counts as a new turn only when the
+  UserPromptSubmit hook delivered it, so every prompt after the first was forwarded to the requested model unjudged
+  (`side` / `plain_string_no_typed_match` in `decisions.jsonl`). Measured on 2.1.281 (`docs/observations.md`,
+  2026-09-24): http hooks go through the sandbox's network allowlist (`allowedHttpHookUrls` does not change it); command
+  hooks do not. Under the sandbox reflex now injects command hooks that run `reflex hook-relay`, which relays each event
+  to the door; the second prompt of a sandboxed session is judged and routed like the first.
+
+### Added
+
+- **`REFLEX_HOOKS=auto|http|command|off`** (default `auto`): how the outcome hooks reach the door. `auto` uses `http`
+  hooks, except when the session's settings turn the sandbox on (user, project, local project, the `--settings` value
+  and managed settings, in Claude Code's precedence), where it uses `command` hooks and says so in `worker.log`. `off`
+  injects none, which leaves routing to a session's first prompt; outcome capture, escalation and the delegation hint
+  need them too.
+- **`reflex hook-relay <url>`**: the command hook itself. Reads one hook event on stdin, posts it to the loopback `url`,
+  prints the door's answer when it is a JSON object and nothing otherwise, and always exits 0.
 
 ## 0.5.7 — 2026-09-25
 

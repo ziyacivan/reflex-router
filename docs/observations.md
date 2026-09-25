@@ -545,6 +545,55 @@ requested Haiku itself (`requested.model` `claude-haiku-4-5-20251001`, no effort
 of the transcript's last turn, so the user's own model choice did not come back. Measured and fixed afterwards: [wire format §5.9](wire-format.md#59-a-resumed-conversation-requests-the-transcripts-model-21281-0).
 
 
+## 2026-09-24 — the outcome hooks under Claude Code's sandbox (2.1.281, Linux)
+
+A project whose `.claude/settings.local.json` says `{"sandbox": {"enabled": true}}`: every prompt of an interactive
+session launched through reflex showed `UserPromptSubmit hook error — HTTP 403 from http://127.0.0.1:46847/__reflex/hook`,
+and `claude -p` sessions reported `Stop hook error`. Neither the front door nor the worker has a 403 path
+(`src/launcher/front-door.ts` answers the hook with the worker's reply or a silent 204), so the request never reached
+reflex. Same prompt, `claude -p "Reply with the single word: ok" --output-format stream-json --verbose` through the
+launcher in route mode, one `--settings` override each:
+
+| session | hook errors | result |
+|---|---|---|
+| `/tmp`, no sandbox in any settings | none | `ok`; opus-5-5 asked, haiku-4-5 sent |
+| the sandboxed project, as is | `Stop hook error` | `ok` (this one prompt still routed) |
+| + `{"sandbox":{"enabled":false}}` | none | `ok` |
+| + `{"allowedHttpHookUrls":["http://127.0.0.1:*"]}` | `Stop hook error` | `ok` |
+| + `{"sandbox":{"enabled":true,"network":{"allowedDomains":["127.0.0.1","localhost"]}}}` | none | `ok` |
+
+So the sandbox's network allowlist decides. The network-config page's "never sends localhost through the proxy" is
+stated for WebSocket connections; http hooks did go through the allowlist here. Allowing `127.0.0.1` fixes it, but it
+opens every loopback service to every sandboxed command, which a user may not want.
+
+**Correction, the same night: routing did depend on the hooks.** The first fix left the hooks out under the sandbox and
+was verified with one `claude -p` prompt, which routed; the table's "routing unaffected" was read off that single prompt.
+A real interactive session in the sandboxed project told a different story in `decisions.jsonl`: its first prompt was a
+`new` turn and was judged, and every later prompt was `side` / `unclassified` / `plain_string_no_typed_match`,
+forwarded to the requested model without a question to the backend. Since 2.1.278 a typed prompt is a plain string, and
+a plain string counts as a new turn only when the UserPromptSubmit hook delivered that prompt
+(`src/wire/claude-code.ts`, `classifyTurn`); a session's first request reaches reflex as blocks, which is why it alone
+routed. So without the hooks only the first prompt of a session is routed.
+
+A command hook gets through where the http hook does not: in a session with `{"sandbox":{"enabled":true}}` and both kinds
+on `UserPromptSubmit`, a loopback listener received the command hook's POST (`fetch` from a `node` script, answered 204)
+and nothing from the http hook: the command hook, a process Claude Code starts itself, was not held to the sandbox's
+network allowlist. Hence
+`REFLEX_HOOKS=auto`: `http` hooks normally, and under the sandbox `command` hooks running `reflex hook-relay <url>`, which
+relays the event on stdin to the door and prints the door's answer (only a JSON object; anything else prints nothing,
+since a UserPromptSubmit command hook's plain stdout would join the prompt's context).
+
+Two prompts in one session (`claude -p --input-format stream-json`, two user messages), in the sandboxed project, route
+mode, Jev:
+
+| build | prompt 1 | prompt 2 | hook errors |
+|---|---|---|---|
+| hooks left out (the first fix) | `new`, Jev haiku 1.0, haiku sent | `side` / `plain_string_no_typed_match`, opus sent | none |
+| hooks relayed by a command hook | `new`, Jev haiku 1.0, haiku sent | `new`, Jev haiku 1.0, haiku sent | none |
+
+The relay costs one `node` start per hook event: `reflex statusline`, the same CLI path, took 39–46 ms here.
+
+
 ## 2026-09-24 — three days of route mode: down and up moves nearly cancel
 
 **Setup.** `reflex report --usd` over the maintainer's `~/.reflex/decisions.jsonl` (2026-09-22T15:21Z to

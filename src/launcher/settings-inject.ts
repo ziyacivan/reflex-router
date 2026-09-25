@@ -106,6 +106,38 @@ export function mergeSettings(user: JsonObject | null, injected: InjectedSetting
   return out;
 }
 
+/** One settings file as an object; null when it is missing, empty or not a JSON object. */
+export function readSettingsFile(file: string, readFile: (p: string) => string): JsonObject | null {
+  try {
+    const o: unknown = JSON.parse(readFile(file));
+    return isObject(o) ? o : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The user's own `--settings` value (the last one, as Claude Code reads it); null when there is none or it cannot be read. */
+export function userSettingsFromArgv(argv: readonly string[], cwd: string, readFile: (p: string) => string): JsonObject | null {
+  const split = splitSettingsArgs(argv);
+  const last = split.dangling ? undefined : split.values.at(-1);
+  if (last === undefined) return null;
+  const loaded = loadSettingsValue(last, cwd, readFile);
+  return loaded.ok ? loaded.settings : null;
+}
+
+/**
+ * Whether Claude Code's sandbox is on for the session: `sandbox.enabled` from the settings sources given in increasing
+ * precedence (user, project, local project, the --settings value, managed); the last source that sets it wins.
+ */
+export function sandboxEnabled(sources: readonly (JsonObject | null)[]): boolean {
+  let on = false;
+  for (const s of sources) {
+    const sb = s?.["sandbox"];
+    if (isObject(sb) && typeof sb["enabled"] === "boolean") on = sb["enabled"];
+  }
+  return on;
+}
+
 /**
  * True when one of the user's settings files sets `statusLine`. reflex never replaces a user's status line: its own
  * `--settings` would take precedence over theirs. `files` are the user and project settings files (read, never edited);
@@ -114,14 +146,7 @@ export function mergeSettings(user: JsonObject | null, injected: InjectedSetting
  * would be hidden by reflex's (REFLEX_STATUSLINE=0 turns it off).
  */
 export function hasOwnStatusLine(files: readonly string[], readFile: (p: string) => string): boolean {
-  return files.some((f) => {
-    try {
-      const o: unknown = JSON.parse(readFile(f));
-      return isObject(o) && o["statusLine"] !== undefined;
-    } catch {
-      return false;
-    }
-  });
+  return files.some((f) => readSettingsFile(f, readFile)?.["statusLine"] !== undefined);
 }
 
 export interface InjectIO {

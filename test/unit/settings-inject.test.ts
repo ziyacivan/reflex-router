@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { injectSettings, loadSettingsValue, mergeSettings, realInjectIO, splitSettingsArgs, type InjectedSettings } from "../../src/launcher/settings-inject.js";
+import { injectSettings, loadSettingsValue, mergeSettings, readSettingsFile, realInjectIO, sandboxEnabled, splitSettingsArgs, userSettingsFromArgv, type InjectedSettings } from "../../src/launcher/settings-inject.js";
 
 const injected: InjectedSettings = { env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:9" } };
 const withHooks: InjectedSettings = { ...injected, hooks: { PostToolUse: [{ matcher: "*", hooks: [{ type: "http", url: "http://127.0.0.1:9/__reflex/hook" }] }] } };
@@ -147,5 +147,32 @@ describe("injectSettings (real filesystem)", () => {
     assert.ok(fs.existsSync(dir));
     r.cleanup();
     assert.equal(fs.existsSync(dir), false);
+  });
+});
+
+describe("sandboxEnabled (REFLEX_HOOKS=auto relays the outcome hooks through a command hook under Claude Code's sandbox)", () => {
+  it("reads sandbox.enabled from the sources in increasing precedence; the last one that sets it wins", () => {
+    const on = { sandbox: { enabled: true } };
+    const off = { sandbox: { enabled: false } };
+    assert.equal(sandboxEnabled([]), false);
+    assert.equal(sandboxEnabled([null, { statusLine: {} }, null]), false);
+    assert.equal(sandboxEnabled([null, null, on]), true); // a project's .claude/settings.local.json
+    assert.equal(sandboxEnabled([on, off]), false); // the project turns off what the user turned on
+    assert.equal(sandboxEnabled([null, null, on, off, null]), false); // the user's --settings wins over the project
+    assert.equal(sandboxEnabled([null, null, null, off, on]), true); // managed settings win over everything
+    assert.equal(sandboxEnabled([{ sandbox: { enabled: "yes" } }, { sandbox: true }]), false); // only a boolean counts
+  });
+
+  it("finds the user's --settings value, inline or a file, and nothing when it is absent or unreadable", () => {
+    const read = (p: string): string => {
+      if (p === "/w/s.json") return JSON.stringify({ sandbox: { enabled: true } });
+      throw new Error("ENOENT");
+    };
+    assert.deepEqual(userSettingsFromArgv(["-p", "x", "--settings", '{"sandbox":{"enabled":false}}'], "/w", read), { sandbox: { enabled: false } });
+    assert.deepEqual(userSettingsFromArgv(["--settings=/w/s.json"], "/w", read), { sandbox: { enabled: true } });
+    assert.equal(userSettingsFromArgv(["-p", "x"], "/w", read), null);
+    assert.equal(userSettingsFromArgv(["--settings", "/w/missing.json"], "/w", read), null);
+    assert.equal(readSettingsFile("/w/missing.json", read), null);
+    assert.equal(readSettingsFile("/w/s.json", () => "[1]"), null); // not an object
   });
 });

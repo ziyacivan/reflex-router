@@ -97,6 +97,15 @@ describe("hook payloads (2.1.277 fixtures)", () => {
     assert.equal(h["PostToolUse"]?.[0]?.matcher, "Edit|Write|MultiEdit|NotebookEdit|Bash");
     assert.deepEqual(h["UserPromptSubmit"]?.[0]?.hooks[0], { type: "http", url: "http://127.0.0.1:4321/__reflex/hook", timeout: 2 });
   });
+
+  it("under the sandbox the same events go through a command hook that relays to the same url", () => {
+    const h = outcomeHooks(4321, { kind: "command", relay: '"/usr/bin/node" "/opt/reflex/bin/reflex.js" hook-relay' });
+    assert.deepEqual(Object.keys(h).sort(), ["PostToolUse", "PostToolUseFailure", "PreToolUse", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"]);
+    assert.equal(h["PreToolUse"]?.[0]?.matcher, "Agent|Task");
+    assert.equal(h["PostToolUse"]?.[0]?.matcher, "Edit|Write|MultiEdit|NotebookEdit|Bash");
+    const cmd = { type: "command", command: '"/usr/bin/node" "/opt/reflex/bin/reflex.js" hook-relay http://127.0.0.1:4321/__reflex/hook', timeout: 2 };
+    for (const e of Object.keys(h)) assert.deepEqual(h[e]?.[0]?.hooks[0], cmd, e);
+  });
 });
 
 // ---- tracker ------------------------------------------------------------------------------------------------------

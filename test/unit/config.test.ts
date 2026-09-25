@@ -134,3 +134,19 @@ describe("SETTING_NAMES", () => {
     assert.equal(defaultHome({ REFLEX_HOME: " /x " }, "/h"), "/x");
   });
 });
+
+describe("REFLEX_HOOKS", () => {
+  it("is auto by default, takes http, command and off, and refuses anything else", () => {
+    assert.equal(load({}).config.hooks, "auto");
+    assert.equal(load({ REFLEX_HOOKS: "off" }).config.hooks, "off");
+    assert.equal(load({ REFLEX_HOOKS: "http" }).config.hooks, "http");
+    assert.equal(load({ REFLEX_HOOKS: "command" }).config.hooks, "command");
+    assert.equal(loadConfig({ REFLEX_HOOKS: "on" }, "/home/u").ok, false);
+    assert.equal(loadConfig({ REFLEX_HOOKS: "maybe" }, "/home/u").ok, false);
+    assert.ok(SETTING_NAMES.includes("REFLEX_HOOKS"));
+  });
+
+  it("says the delegation hint has no way through with the hooks off", () => {
+    assert.ok(load({ REFLEX_HOOKS: "off", REFLEX_DELEGATE: "1" }).warnings.some((w) => w.includes("REFLEX_HOOKS=off")));
+  });
+});
