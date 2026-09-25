@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.5.8 — 2026-09-25
+
 ### Fixed
 
 - **Under Claude Code's sandbox every outcome hook failed with "HTTP 403", and only a session's first prompt was

@@ -1,6 +1,6 @@
 {
   "name": "reflex-router",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Orchestration layer for Claude Code: a loopback proxy that asks a fast decision model how much reasoning a piece of work needs.",
   "license": "MIT",
   "repository": {
