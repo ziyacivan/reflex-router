@@ -708,3 +708,30 @@ pinned below it (2 on 09-26, 72k and 83k cache writes on Opus).
 ($2/$10, cache read $0.20) differ too little for Sonnet's extra thinking; `savedUsd` (report section 8, status line)
 assumes the requested model would have produced the same tokens and overstates savings accordingly. One machine,
 mostly one batch workload for the A/B; list-price estimates over recorded token counts, not bills.
+
+## 2026-09-26 — Julia 1 as a local decision backend: fast, but it does not carry Jev's tier judgement. Not pursued
+
+**Setup.** Julia 1 (Supersonic Labs; 144.3M-parameter mmBERT-small encoder, Apache 2.0, same `state` + typed
+`questions` interface as Jev) behind a small wrapper speaking the laya-serve protocol, run by reflex's own Laya path
+(`REFLEX_BACKEND=laya`, `REFLEX_LAYA_BIN=<wrapper>`, no reflex code change). The 500 synthetic pilot tasks
+(`harvest-corpus.ts`) were put to Jev and to Julia; the wrapper passes reflex's questions with structured instructions
+and criteria flattened to one string each (Julia's input). Then three wordings put to Julia directly on the same tasks.
+
+**Result.** Speed is real: 122 ms p50 through reflex for the full question set (tier, reasoning demand and the seven
+feature questions), about 30 ms for one question. The judgement is not there:
+
+| | agrees with Jev's tier (argmax) | rank correlation with Jev |
+| --- | --- | --- |
+| reflex's question ("least capable tier that will still do this well") | 29.8% | −0.27 (inverted) |
+| "How hard is this software task?" easy / medium / hard | 38.8% | 0.19 |
+| reasoning score, three levels | 38.8% | 0.04 |
+| always Sonnet (baseline) | 41.0% | — |
+
+With the fitted head (`fit.ts`, cross-validated) Julia's answers collapse to near-constant Opus: cross-entropy 1.04
+against Laya's 0.79 on its own corpus (uniform over three tiers is 1.10), haiku recall 0/115. No wording beat the
+constant baseline.
+
+**What it means.** Julia could replace the network hop and the Jev bill, but not Jev's decision; a backend that routes
+no better than "always Sonnet" gains nothing from being fast. Jev is the teacher here, not ground truth, but no
+outcome labels exist to say Julia is right where Jev differs. *Condition:* synthetic English tasks, one machine, a
+thin adapter written by us (a different prompt format might do better; three wordings did not).
