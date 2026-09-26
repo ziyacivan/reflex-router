@@ -117,11 +117,13 @@ reflex report
 
 8. Cost at list prices (estimate)
   ESTIMATE at list prices (src/pricing.ts, last verified 2026-09-25): the same token counts priced at the model sent vs the model requested.
+  That assumes the requested model would have used the same tokens; it does not (Sonnet 5 wrote 2.7x Opus 5.5's output on the same tasks, observations.md). The measured line below replaces it where REFLEX_AB ran.
   Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
   The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
     main chat + subagent requests     n       tokens  usage at sent as % of at requested  $ at requested  $ at sent  $ difference
     routed only                    1399   62,911,655                               24.1%          $84.53     $20.38        $64.15
     all (unrouted count as equal)  3627  163,546,625                               70.5%         $217.68    $153.53        $64.15
+  measured (REFLEX_AB): no randomised turns; the rows above are the only estimate, and they assume equal token counts
   Side calls are excluded here and shown in section 9.
   delegation: no session ran with the hint (REFLEX_DELEGATE=1); nothing to compare
 

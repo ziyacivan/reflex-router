@@ -1,13 +1,13 @@
 // What `reflex statusline` shows: per session, the model the main chat asked for and the one reflex sent on its last
 // request, the same for each subagent, the effort level REFLEX_EFFORT last applied against the client's (main chat and
 // each subagent until its SubagentStop), each subagent's title (the Agent call's description, in memory only), the session's
-// estimated cost (every recorded request, side calls too, at the model sent, list prices), and the estimated saving (section 8's "routed only" difference: the same token counts at the
-// requested model minus at the model sent, list prices). Model ids, level names, subagent titles and dollar sums only,
+// estimated cost (every recorded request, side calls too, at the model sent, list prices). No saving: the only honest one
+// is section 8's REFLEX_AB comparison, which needs a whole log, not a session. Model ids, level names, subagent titles and dollar sums only,
 // in memory only, served on loopback (GET /__reflex/status); never logged.
 import type { DecisionRecord } from "../log/decision-log.js";
 import type { DecisionInfo } from "../outcome/tracker.js";
 import { toDec, type J } from "../report/records.js";
-import { costOf, savedUsd } from "../report/sections.js";
+import { costOf } from "../report/sections.js";
 
 export interface ModelPair {
   readonly requested: string | null;
@@ -33,8 +33,6 @@ export interface SessionStatusBody {
   readonly effort: { readonly main: EffortPair | null };
   /** Estimated $ this session cost at list prices: the recorded token counts at the model sent. */
   readonly cost: number;
-  /** Estimated $ saved: this session, and every logged session (null until the log has been read). */
-  readonly saved: { readonly session: number; readonly total: number | null };
 }
 
 type Sub = { -readonly [K in keyof SubagentStatus]: SubagentStatus[K] } & { agentId: string | null; done: boolean };
@@ -45,11 +43,8 @@ export class SessionStatus {
   readonly #subs = new Map<string, Map<string, Sub>>();
   /** Per session: Agent-call titles by the hash of the prompt they started, until a subagent's first request claims one. */
   readonly #titles = new Map<string, Map<string, string>>();
-  readonly #saved = new Map<string, number>();
   readonly #cost = new Map<string, number>();
   readonly #mainEffort = new Map<string, EffortPair>();
-  /** The log's total when this worker started; this worker's own records are added on top. */
-  #logged: number | null = null;
 
   observe(d: DecisionInfo): void {
     if (d.sessionId === null || d.sentModel === null || d.turn === "side") return;
@@ -94,7 +89,6 @@ export class SessionStatus {
   addRecord(record: DecisionRecord, sessionId: string | null): void {
     const d = sessionId === null ? null : toDec(record as unknown as J);
     if (d === null || sessionId === null) return;
-    this.#saved.set(sessionId, (this.#saved.get(sessionId) ?? 0) + savedUsd([d]));
     this.#cost.set(sessionId, (this.#cost.get(sessionId) ?? 0) + costOf([d]).atSentUsd);
     // An applied level holds for the conversation until a later decided turn applies another.
     const e = d.effort;
@@ -104,18 +98,12 @@ export class SessionStatus {
     else if (d.kind === "subagent" && d.conv !== null) this.#sub(sessionId, d.conv).effort = pair;
   }
 
-  setLoggedTotal(usd: number): void {
-    this.#logged = usd;
-  }
-
   get(sessionId: string): SessionStatusBody {
-    const mine = [...this.#saved.values()].reduce((a, b) => a + b, 0);
     return {
       main: this.#main.get(sessionId) ?? null,
       subagents: [...(this.#subs.get(sessionId)?.values() ?? [])].filter((x) => !x.done).map(({ title, model, effort }) => ({ title, model, effort })),
       effort: { main: this.#mainEffort.get(sessionId) ?? null },
       cost: this.#cost.get(sessionId) ?? 0,
-      saved: { session: this.#saved.get(sessionId) ?? 0, total: this.#logged === null ? null : this.#logged + mine },
     };
   }
 }

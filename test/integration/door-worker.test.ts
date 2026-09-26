@@ -149,8 +149,8 @@ describe("front door + worker: passthrough fidelity", () => {
   it("GET /__reflex/status answers the worker's view of a session and never reaches the upstream", async () => {
     const r = await request(`${stack.url}/__reflex/status?session=unknown`);
     assert.equal(r.status, 200);
-    const j = JSON.parse(r.body.toString()) as { worker: string; main: unknown; subagents: unknown[]; saved: { session: number } };
-    assert.deepEqual([j.worker, j.main, j.subagents, j.saved.session], ["up", null, [], 0]);
+    const j = JSON.parse(r.body.toString()) as { worker: string; main: unknown; subagents: unknown[]; cost: number };
+    assert.deepEqual([j.worker, j.main, j.subagents, j.cost], ["up", null, [], 0]);
     assert.equal(stack.upstream.seen.length, 0);
   });
 

@@ -21,8 +21,6 @@ export interface StatusBody {
   readonly subagents?: readonly { readonly title?: string | null; readonly model: Pair | null; readonly effort: EffortPair | null }[];
   /** Estimated $ this session cost (list prices, every recorded request at the model sent). */
   readonly cost?: number;
-  /** Estimated $ saved (list prices; negative when routing cost more): this session, and all logged sessions. */
-  readonly saved?: { readonly session: number; readonly total: number | null };
   /** REFLEX_EFFORT: the level last applied to the main chat, with the client's own. */
   readonly effort?: { readonly main: EffortPair | null };
 }
@@ -70,7 +68,7 @@ const SEP = ` ${DIM}·${RESET} `;
 
 /**
  * Pure. The lines for one session; null prints nothing (not behind reflex, or nothing to say yet).
- *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Est. Saved: $0.42 · Total Saved: $3.10
+ *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80
  *   ↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)
  * One line per running subagent (changed or not), titled as Claude Code shows it (else `subagent N`, by start order).
  */
@@ -82,11 +80,6 @@ export function formatStatus(s: StatusBody | null): string | null {
   const me = s.effort?.main ?? null;
   if (me !== null && moved(me)) parts.push(effortText(me));
   if (s.cost !== undefined && s.cost >= 0.005) parts.push(`${DIM}Est. Cost:${RESET} ${money(s.cost)}`);
-  const saved = s.saved;
-  if (saved !== undefined && (Math.abs(saved.session) >= 0.005 || Math.abs(saved.total ?? 0) >= 0.005)) {
-    parts.push(`${DIM}Est. Saved:${RESET} ${money(saved.session)}`);
-    if (saved.total !== null) parts.push(`${DIM}Total Saved:${RESET} ${money(saved.total)}`);
-  }
   const subs = (s.subagents ?? []).map((x, i) => {
     const bits = [...(x.model !== null ? [modelText(x.model)] : []), ...(x.effort !== null && moved(x.effort) ? [effortText(x.effort)] : [])];
     const title = cleanTitle(x.title ?? "");

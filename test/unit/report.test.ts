@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { percentile } from "../../src/report/format.js";
 import { buildReport, buildReportJson, reportCommand, type ReportJson } from "../../src/report/index.js";
 import { parseDuration, parseRecords, sinceView } from "../../src/report/records.js";
-import { breakEvenOf, classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, s14Effort, escalationRows, abArms, abComparison, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
+import { breakEvenOf, classifyMoves, costOf, fingerprintGroups, hintArms, HARNESS_FEATURES, MIN_OUTCOME_N, outcomeGroups, s0Workflow, s1Decisions, s2MassVsArgmax, s3ShadowVsActual, s4Guard, s5Fallbacks, s8Cost, s11Fingerprints, s12SideRouting, s13Escalations, s14Effort, escalationRows, abArms, abComparison, abCostUnits, ratioInterval, harnessFeatureCost, SECTIONS, sideRoutingEstimate, workProfile, wouldRoute, type Ctx } from "../../src/report/sections.js";
 import { at, dec, large, mixed, outcome, sideCallLog, singleTurnLongLoop, toJsonl, update, type Rec } from "../support/report-fixtures.js";
 
 const GOLDEN_DIR = path.join("test", "fixtures", "report");
@@ -1082,3 +1082,27 @@ describe("report: section 14 (REFLEX_EFFORT)", () => {
   });
 });
 
+
+describe("report: measured saving (REFLEX_AB)", () => {
+  it("a unit is a randomised turn plus its tool loop; unrandomised turns and other conversations are not mixed in", () => {
+    const M = 1_000_000;
+    const recs = [
+      dec({ id: "r1", t: 0, ab: "routed", sent: "sonnet", usage: [M, 0, 0, 0] }), // $2 at Sonnet
+      dec({ id: "r1c", t: 1, turn: "continuation", sent: "sonnet", usage: [M, 0, 0, 0] }), // +$2, same unit
+      dec({ id: "x", t: 2, usage: [M, 0, 0, 0] }), // a turn outside the experiment closes r1's unit
+      dec({ id: "x2", t: 3, turn: "continuation", usage: [M, 0, 0, 0] }),
+      dec({ id: "c1", t: 4, ab: "control", conv: "bbbbbbbbbbbbbbbb:m:0000000000000001", usage: [M, 0, 0, 0] }), // $5 at the fixtures' Opus
+    ];
+    assert.deepEqual(abCostUnits(parse(toJsonl(recs)).decisions), { routed: [4], control: [5] });
+  });
+
+  it("section 8 states the difference with an interval once both arms reach MIN_OUTCOME_N, and not before", () => {
+    const arm = (a: "routed" | "control", n: number, output: number) =>
+      Array.from({ length: n }, (_, i) => dec({ id: `${a}${i}`, t: i, ab: a, conv: `${a}:m:${i}`, usage: [0, output + i, 0, 0] }));
+    const few = s8Cost(ctxOf(toJsonl([...arm("routed", 3, 1000), ...arm("control", 3, 1000)]))).join("\n");
+    assert.match(few, /routed n=3, control n=3\): insufficient data/);
+    const many = s8Cost(ctxOf(toJsonl([...arm("routed", MIN_OUTCOME_N, 2000), ...arm("control", MIN_OUTCOME_N, 1000)]))).join("\n");
+    assert.match(many, /a routed-arm turn cost \+9\d% against a control turn \(95% bootstrap interval \+\d+% to \+\d+%\)/, many);
+    assert.equal(ratioInterval([1], []), null);
+  });
+});

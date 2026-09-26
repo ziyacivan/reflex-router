@@ -29,11 +29,6 @@ describe("statusline", () => {
     const subs = [sub(HAIKU, "List docs directory files"), sub(OPUS, "Unchanged"), sub(SONNET, null)];
     assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: subs })), "Reflex: Opus 5.5\n↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5)\n↳ Unchanged: Opus 5.5\n↳ subagent 3: ⇣ Sonnet 5 (asked Opus 5.5)");
     assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [] })), "Reflex");
-    const main = { requested: OPUS, sent: OPUS };
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.4231, total: 3.1 } })), "Reflex: Opus 5.5 · Est. Saved: $0.42 · Total Saved: $3.10");
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0, total: -0.95 } })), "Reflex: Opus 5.5 · Est. Saved: $0.00 · Total Saved: −$0.95");
-    assert.equal(plain(formatStatus({ worker: "up", main, subagents: [], saved: { session: 0.001, total: null } })), "Reflex: Opus 5.5");
-    assert.equal(plain(formatStatus({ worker: "up", main: null, subagents: [], saved: { session: 0, total: 2.14 } })), "Reflex · Est. Saved: $0.00 · Total Saved: $2.14");
     assert.equal(plain(formatStatus({ worker: "down" })), "Reflex: passthrough");
     assert.equal(formatStatus(null), null);
   });
@@ -57,21 +52,19 @@ describe("statusline", () => {
     s.observe(d({ turn: "side", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", turn: "continuation", sentModel: HAIKU }));
-    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0, saved: { session: 0, total: null } });
-    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0, saved: { session: 0, total: null } });
+    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0 });
+    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0 });
   });
 
-  it("the saving is section 8's: the same usage at the requested model minus at the model sent, routed records only", () => {
+  it("the cost is every record at the model sent", () => {
     const s = new SessionStatus();
     const rec = (o: Record<string, unknown>) => ({ id: "r", at: "2026-09-23T10:00:00.000Z", turn: "new", requested: { model: OPUS, tier: "opus" }, usage: { input: 1_000_000, output: 0, cache_read: 0, cache_create: 0 }, ...o }) as unknown as DecisionRecord;
     s.addRecord(rec({ forwarded: { model: SONNET, rewritten: true, fallback: false } }), "s1"); // $4 at Opus 5.5, $2 at Sonnet
-    s.addRecord(rec({ forwarded: { model: OPUS, rewritten: false, fallback: false } }), "s1"); // not routed: nothing
-    s.addRecord(rec({ turn: "side", forwarded: { model: HAIKU, rewritten: true, fallback: false } }), "s1"); // side calls: section 9
+    s.addRecord(rec({ forwarded: { model: OPUS, rewritten: false, fallback: false } }), "s1"); // not routed
+    s.addRecord(rec({ turn: "side", forwarded: { model: HAIKU, rewritten: true, fallback: false } }), "s1"); // side calls count too
     s.addRecord(rec({ forwarded: { model: HAIKU, rewritten: true, fallback: false } }), "s2"); // another session
-    s.setLoggedTotal(10);
-    assert.deepEqual(s.get("s1").saved, { session: 2, total: 10 + 2 + 3 });
     assert.equal(s.get("s1").cost, 2 + 4 + 1, "the cost: every record at the model sent, side calls included"); // Sonnet $2, Opus $4, Haiku $1
-    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: [], cost: 7.004, saved: { session: 0, total: null } })), "Reflex: Opus 5.5 · Est. Cost: $7.00");
+    assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: [], cost: 7.004 })), "Reflex: Opus 5.5 · Est. Cost: $7.00");
     assert.equal(plain(formatStatus({ worker: "up", main: { requested: OPUS, sent: OPUS }, subagents: [], cost: 0.001 })), "Reflex: Opus 5.5");
   });
 

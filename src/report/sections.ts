@@ -550,10 +550,75 @@ export function costOf(d: readonly Dec[]): CostRow {
   return { n, tokens: tok, atSentUsd: sent, atRequestedUsd: requested };
 }
 
-/** Section 8's "routed only" difference: $ at requested minus $ at sent (negative when routing cost more). Estimate. */
-export function savedUsd(d: readonly Dec[]): number {
-  const c = costOf(d.filter((x) => x.turn !== "side" && x.routed));
-  return c.atRequestedUsd - c.atSentUsd;
+/**
+ * REFLEX_AB work units: each randomised main-chat turn with the continuations that follow it in its conversation, until
+ * the next new turn, priced at the model sent. Intention to treat: the `routed` arm keeps the turns the guard held on the
+ * requested model, because leaving them out would compare the turns the guard let through with all of `control`.
+ */
+export function abCostUnits(d: readonly Dec[]): Record<"routed" | "control", number[]> {
+  const out = { routed: [] as number[], control: [] as number[] };
+  const byConv = new Map<string, Dec[]>();
+  for (const x of d) if (x.kind === "main" && x.turn !== "side" && x.conv !== null) byConv.set(x.conv, [...(byConv.get(x.conv) ?? []), x]);
+  for (const list of byConv.values()) {
+    list.sort((a, b) => a.atMs - b.atMs);
+    let unit: Dec[] | null = null;
+    const close = (u: Dec[] | null): void => {
+      const arm = u?.[0]?.ab;
+      if (u === null || (arm !== "routed" && arm !== "control") || u[0]!.usage === null) return;
+      out[arm].push(costOf(u).atSentUsd);
+    };
+    for (const x of list) {
+      if (x.turn === "new") {
+        close(unit);
+        unit = [x];
+      } else unit?.push(x);
+    }
+    close(unit);
+  }
+  return out;
+}
+
+const BOOTSTRAP_RESAMPLES = 2000;
+
+/** 95% bootstrap interval of mean(a)/mean(b) - 1. Seeded, so the report is the same on every run. */
+export function ratioInterval(a: readonly number[], b: readonly number[]): { lo: number; hi: number } | null {
+  if (a.length === 0 || b.length === 0) return null;
+  let seed = 1;
+  const rnd = (n: number): number => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed % n;
+  };
+  const resample = (v: readonly number[]): number => {
+    let s = 0;
+    for (let i = 0; i < v.length; i++) s += v[rnd(v.length)]!;
+    return s / v.length;
+  };
+  const r: number[] = [];
+  for (let i = 0; i < BOOTSTRAP_RESAMPLES; i++) {
+    const mb = resample(b);
+    if (mb > 0) r.push(resample(a) / mb - 1);
+  }
+  const lo = percentile(r, 2.5);
+  const hi = percentile(r, 97.5);
+  return lo === null || hi === null ? null : { lo, hi };
+}
+
+const signedPct = (x: number): string => `${x >= 0 ? "+" : ""}${(100 * x).toFixed(0)}%`;
+
+/** Section 8's measured line: what a routed turn cost against a turn held back, both randomly chosen from the same pool. */
+function abCostLine(d: readonly Dec[], showUsd: boolean): string[] {
+  const u = abCostUnits(d);
+  if (u.routed.length + u.control.length === 0) return ["  measured (REFLEX_AB): no randomised turns; the rows above are the only estimate, and they assume equal token counts"];
+  const head = `  measured (REFLEX_AB, main chat only; a turn plus its tool loop, at the model sent; routed n=${u.routed.length}, control n=${u.control.length})`;
+  if (Math.min(u.routed.length, u.control.length) < MIN_OUTCOME_N) return [`${head}: insufficient data, each arm needs n >= ${MIN_OUTCOME_N}`];
+  const mr = mean(u.routed)!;
+  const mc = mean(u.control)!;
+  const ci = ratioInterval(u.routed, u.control);
+  return [
+    `${head}:`,
+    `    a routed-arm turn cost ${signedPct(mr / mc - 1)} against a control turn${ci === null ? "" : ` (95% bootstrap interval ${signedPct(ci.lo)} to ${signedPct(ci.hi)})`}${showUsd ? `: ${usd(mr)} vs ${usd(mc)} per turn` : ""}`,
+    "    this, not the rows above, is the saving: the rows above price the routed model's own token counts at the requested model, and a different model writes a different amount.",
+  ];
 }
 
 /** 8. Cost at list prices (estimate). */
@@ -564,6 +629,7 @@ export function s8Cost({ rec, usd: showUsd }: Ctx): string[] {
   const r = costOf(routed);
   const out = [
     `  ESTIMATE at list prices (src/pricing.ts, last verified ${LAST_VERIFIED}): the same token counts priced at the model sent vs the model requested.`,
+    "  That assumes the requested model would have used the same tokens; it does not (Sonnet 5 wrote 2.7x Opus 5.5's output on the same tasks, observations.md). The measured line below replaces it where REFLEX_AB ran.",
     "  Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.",
     "  The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.",
   ];
@@ -577,6 +643,7 @@ export function s8Cost({ rec, usd: showUsd }: Ctx): string[] {
     line("all (unrouted count as equal)", all),
   ], "    "));
   if (!showUsd) out.push("  Dollar amounts: rerun with --usd. Without it only relative usage is shown.");
+  out.push(...abCostLine(work, showUsd));
   out.push("  Side calls are excluded here and shown in section 9.");
   out.push(...delegationLine(hintArms(rec), showUsd));
   return out;

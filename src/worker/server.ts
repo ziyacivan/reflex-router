@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Config } from "../config.js";
@@ -26,8 +25,6 @@ import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
 import { RecentPrompts } from "./recent-prompts.js";
 import { ModelNotices } from "./model-notice.js";
 import { SessionStatus } from "./session-status.js";
-import { defaultLogFiles, parseRecords } from "../report/records.js";
-import { savedUsd } from "../report/sections.js";
 
 export interface WorkerOptions {
   readonly config: Config;
@@ -113,14 +110,6 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   /** Agent calls that named their subagent's model, by session and prompt hash: those subagents are never routed. */
   const explicitModels = new Map<string, string>();
   const agentKey = (sessionId: string | null, prompt: string): string => `${sessionId ?? ""}\n${hashId(prompt.trim()) ?? ""}`;
-  // The all-time figure: the decision log as it stands now (the same records `reflex report` reads), read once, off the
-  // request path. ponytail: a record this worker writes before the read finishes counts twice, and other sessions
-  // running in parallel only show up at the next worker start.
-  setImmediate(() => {
-    Promise.all(defaultLogFiles(opts.config.home).map(async (source) => ({ source, text: await fs.promises.readFile(source, "utf8") })))
-      .then((texts) => status.setLoggedTotal(savedUsd(parseRecords(texts).decisions)))
-      .catch((e: unknown) => opts.log("warn", `status: could not read the decision log: ${e instanceof Error ? e.message : String(e)}`));
-  });
   // Keep the backend's keep-alive connection open while nothing is being decided: the first decision after an idle gap
   // otherwise pays a fresh TCP+TLS handshake (observations.md: p50 823 ms new vs 382 ms reused). Best effort and
   // fire-and-forget, exactly like the start-up warm; `connection` on each decision record measures whether it worked.
