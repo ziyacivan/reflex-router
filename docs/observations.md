@@ -687,3 +687,24 @@ tier than the main chat are not routed. Resuming a conversation in a new process
 interactive pair, with or without reflex (12,831 vs 12,840 written), so continuing without reflex adds nothing. The
 effort level may go above the user's own by the owner's decision. List-price estimate of all live runs: about $11.40
 (~6.3M tokens).
+
+## 2026-09-26 — token audit: Sonnet 5 uses ~2.7× Opus 5.5's output, so Opus 5.5 → Sonnet saves ~nothing
+
+**Setup.** `~/.reflex/decisions.jsonl` 2026-09-22T15:21Z → 09-26T15:47Z (4,037 requests, 758 sessions, ~516M tokens,
+~$257 at list prices), joined by usage to Claude Code's transcripts back to 2026-08-28. Randomised arms from
+`REFLEX_AB=0.5` and `REFLEX_EFFORT_AB=0.2`; unit = a new turn plus its continuations; 95% bootstrap intervals.
+Full write-up (Turkish): `docs/token-audit-2026-09-26.md`.
+
+**Result.** (1) Routing A/B on 681 single-request `claude -p` tasks (text generation spawned by an SEO tool that inherited a reflex session's `ANTHROPIC_BASE_URL`; not coding work), both arms at client effort `high`, balanced on
+reasoning score and prompt size: Sonnet 5 vs Opus 5.5 output tokens +150% [+129, +173], total tokens +18% [+13, +24],
+cost −4% [−12, +4]. Section 8's method credits these tasks with $15.3 saved; the arms say ~$0.6. (2) Before 0.5.6,
+interactive sessions started at ~76k tokens of context against ~42k without reflex (tool search off): ~59M extra
+tokens (~12.5% of interactive tokens, ~$15) in the logged days. (3) `REFLEX_EFFORT_UP` raised a client `low` on 68
+turns; against 20 control turns cost per unit +46% mean [−30, +257], +57% median [−13, +176]. (4) Still open: main-chat
+side calls classified `unclassified` (e.g. a `!` bash-mode input) go to the requested model while the conversation is
+pinned below it (2 on 09-26, 72k and 83k cache writes on Opus).
+
+**What it means.** On this log reflex cost more than it saved. Opus 5.5 ($4/$20, cache read $0.20) and Sonnet 5
+($2/$10, cache read $0.20) differ too little for Sonnet's extra thinking; `savedUsd` (report section 8, status line)
+assumes the requested model would have produced the same tokens and overstates savings accordingly. One machine,
+mostly one batch workload for the A/B; list-price estimates over recorded token counts, not bills.
