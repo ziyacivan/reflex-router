@@ -6,6 +6,18 @@
 
 _Nothing yet._
 
+## 0.5.9 — 2026-09-26
+
+### Changed
+
+- **The saving is measured, not assumed.** `reflex report` section 8 priced the routed model's own token counts at the
+  requested model, which assumes both write the same amount. They do not: on the same tasks Sonnet 5 wrote about 2.7x
+  Opus 5.5's output (`docs/observations.md`, 2026-09-26), so the figure overstated the saving several times over.
+  Section 8 now adds a measured line from `REFLEX_AB`: a randomised main-chat turn plus its tool loop, routed arm
+  against control, at the model sent, with a 95% bootstrap interval, shown once each arm has 20 turns.
+- **The status line no longer shows `Est. Saved` / `Total Saved`.** They used the old figure, and a saving cannot be
+  measured per session. `Est. Cost` stays.
+
 ## 0.5.8 — 2026-09-25
 
 ### Fixed
