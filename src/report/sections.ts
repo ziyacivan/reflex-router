@@ -885,6 +885,108 @@ export function s14Effort(ctx: Ctx): string[] {
   return out;
 }
 
+// ---- 15. Quota exchange rate ------------------------------------------------------------------------------------
+
+/** Windows this section reads; others (e.g. `7d_oi`, on Fable requests only) are recorded but not attributed. */
+export const QUOTA_WINDOWS = ["5h", "7d"] as const;
+/** A stretch without a request this long breaks the chain: usage outside reflex is most likely in such a gap. */
+export const QUOTA_GAP_MS = 30 * 60_000;
+/** A model row needs this share of its stretch's Est. $ to come from that model. */
+const QUOTA_MODEL_SHARE = 0.9;
+/** Below this many steps a row is marked. */
+export const MIN_QUOTA_STEPS = 5;
+
+/** Requests between two rises of a window's reported share: what they used and how far the share rose. */
+export interface QuotaStep {
+  readonly atMs: number;
+  /** Rise in whole percent. */
+  readonly pct: number;
+  readonly tokens: number;
+  readonly usd: number;
+  readonly byModel: ReadonlyMap<string, number>;
+}
+
+/**
+ * A response reports the share used before it (the header comes before its own tokens), in 1% steps. So the tokens of
+ * the requests from one rise up to (not including) the next bought that next rise: counting from rise to rise removes
+ * the rounding at both ends. The first value seen is not a rise (it may be hours old), and a new reset time, a gap of
+ * QUOTA_GAP_MS or a fall of more than one step start over (a 1% fall is a concurrent request's older reading). Every
+ * request counts, side calls too: they draw on the same quota.
+ */
+export function quotaSteps(decisions: readonly Dec[], window: string): QuotaStep[] {
+  const out: QuotaStep[] = [];
+  let last: { util: number; reset: number | null } | null = null;
+  let open: Dec[] | null = null; // requests since the last rise; null until one is seen
+  let prevAt: number | null = null;
+  for (const d of [...decisions].sort((a, b) => a.atMs - b.atMs)) {
+    if (prevAt !== null && d.atMs - prevAt > QUOTA_GAP_MS) {
+      last = null; // the first value after a gap is not a rise either: it may have moved at any time in the gap
+      open = null;
+    }
+    prevAt = d.atMs;
+    const q = d.quota?.[window];
+    if (q !== undefined) {
+      if (last === null || q.reset !== last.reset || q.util < last.util - 0.015) {
+        last = { util: q.util, reset: q.reset };
+        open = null;
+      } else if (q.util > last.util + 1e-9) {
+        if (open !== null) {
+          const byModel = new Map<string, number>();
+          for (const x of open) if (x.sentModel !== null) byModel.set(x.sentModel, (byModel.get(x.sentModel) ?? 0) + costOf([x]).atSentUsd);
+          const c = costOf(open);
+          out.push({ atMs: d.atMs, pct: Math.round((q.util - last.util) * 100), tokens: c.tokens, usd: c.atSentUsd, byModel });
+        }
+        last = { util: q.util, reset: q.reset };
+        open = [];
+      }
+    }
+    open?.push(d);
+  }
+  return out;
+}
+
+/** `2026-W39`: the ISO week (UTC) a time falls in. */
+export function isoWeek(ms: number): string {
+  const d = new Date(ms);
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); // the Thursday of its week names the year
+  const week = Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+/** 15. Tokens and Est. $ per 1% of each quota window, by week and by model. */
+export function s15Quota({ rec, usd: showUsd }: Ctx): string[] {
+  if (!rec.decisions.some((d) => d.quota !== null)) return ["  (no quota recorded: responses carried no anthropic-ratelimit-unified-* headers, e.g. an API key, or the records predate the field)"];
+  const out = [
+    "  Tokens (and Est. $ at list prices) the requests between two 1% rises of a window's reported share used. The share is the account's:",
+    "  usage outside reflex in the same stretch (claude.ai, another machine, claude without reflex) makes these figures lower than what reflex's requests alone bought.",
+    `  A gap of ${QUOTA_GAP_MS / 60_000} min without a request, a new reset time or a fall starts the count over. Rows under ${MIN_QUOTA_STEPS} steps are marked (few).`,
+  ];
+  const head = ["", "steps", "% risen", "tokens per 1%", ...(showUsd ? ["Est. $ per 1%"] : [])];
+  const row = (name: string, s: readonly QuotaStep[]): string[] => {
+    const p = sum(s.map((x) => x.pct));
+    return [`${name}${s.length < MIN_QUOTA_STEPS ? " (few)" : ""}`, String(s.length), String(p), int(p === 0 ? null : sum(s.map((x) => x.tokens)) / p), ...(showUsd ? [p === 0 ? "-" : usd(sum(s.map((x) => x.usd)) / p)] : [])];
+  };
+  for (const w of QUOTA_WINDOWS) {
+    const steps = quotaSteps(rec.decisions, w);
+    out.push("", `  ${w} window: ${steps.length === 0 ? "no step yet (it takes two rises of the share without a break)" : `${steps.length} step${steps.length === 1 ? "" : "s"}`}`);
+    if (steps.length === 0) continue;
+    const weeks = [...new Set(steps.map((x) => isoWeek(x.atMs)))].sort();
+    out.push(...table([["week", ...head.slice(1)], ...weeks.map((wk) => row(wk, steps.filter((x) => isoWeek(x.atMs) === wk)))], "    "));
+    const models = new Map<string, QuotaStep[]>();
+    for (const x of steps) {
+      const top = [...x.byModel.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (top !== undefined && x.usd > 0 && top[1] >= QUOTA_MODEL_SHARE * x.usd) models.set(top[0], [...(models.get(top[0]) ?? []), x]);
+    }
+    if (models.size > 0) {
+      out.push(`    by model (steps where one model had >= ${QUOTA_MODEL_SHARE * 100}% of the Est. $; ${sum([...models.values()].map((m) => m.length))} of ${steps.length} steps):`);
+      out.push(...table([["model", ...head.slice(1)], ...[...models.entries()].sort((a, b) => b[1].length - a[1].length).map(([m, s]) => row(m, s))], "      "));
+    }
+  }
+  if (!showUsd) out.push("", "  Dollar amounts: rerun with --usd.");
+  return out;
+}
+
 export const SECTIONS: readonly { readonly id: string; readonly title: string; readonly run: (c: Ctx) => string[] }[] = [
   { id: "0", title: "0. Workflow profile", run: s0Workflow },
   { id: "1", title: "1. Decisions by kind, turn and tier", run: s1Decisions },
@@ -901,6 +1003,7 @@ export const SECTIONS: readonly { readonly id: string; readonly title: string; r
   { id: "12", title: "12. Side-call routing estimate", run: s12SideRouting },
   { id: "13", title: "13. Escalations (REFLEX_ESCALATE)", run: s13Escalations },
   { id: "14", title: "14. Effort (REFLEX_EFFORT)", run: s14Effort },
+  { id: "15", title: "15. Quota exchange rate (estimate)", run: s15Quota },
 ];
 
 // ---- 12. Side-call routing estimate ---------------------------------------------------------------------------

@@ -91,6 +91,13 @@ export interface Dec {
   /** From `forwarded.fields`: this request carried an effort message reflex added now, and how many it re-inserted. */
   readonly effortAdded: boolean;
   readonly effortReinserted: number;
+  /** `quota`: the subscription windows the response reported (used fraction, reset epoch s); null when it carried none. */
+  readonly quota: Readonly<Record<string, QuotaRec>> | null;
+}
+
+export interface QuotaRec {
+  readonly util: number;
+  readonly reset: number | null;
 }
 
 export interface EffortRec {
@@ -152,6 +159,16 @@ const toEffort = (v: unknown): EffortRec | null => {
   if (!isObj(v)) return null;
   const r = v["reasons"];
   return { pick: str(v["pick"]), target: str(v["target"]), via: str(v["via"]), reasons: Array.isArray(r) ? r.filter((x): x is string => typeof x === "string") : [], ab: str(v["ab"]) };
+};
+
+const toQuota = (v: unknown): Readonly<Record<string, QuotaRec>> | null => {
+  if (!isObj(v)) return null;
+  const out: Record<string, QuotaRec> = {};
+  for (const [w, x] of Object.entries(v)) {
+    const util = num(at(x, "util"));
+    if (util !== null) out[w] = { util, reset: num(at(x, "reset")) };
+  }
+  return Object.keys(out).length === 0 ? null : out;
 };
 
 const toEscalation = (e: unknown): EscalationRec | null => {
@@ -231,6 +248,7 @@ export function toDec(o: J): Dec | null {
     effort: toEffort(at(o, "effort")),
     effortAdded: fields.includes("messages.effort_added"),
     effortReinserted: fields.reduce((n, f) => n + (f.startsWith("messages.effort_reinserted:") ? Number(f.slice("messages.effort_reinserted:".length)) || 0 : 0), 0),
+    quota: toQuota(o["quota"]),
   };
 }
 

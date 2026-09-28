@@ -11,7 +11,7 @@ npm run test:live                          # tests needing a real TYPESAFE_API_K
 npm run build                              # tsc -> dist/
 npm run gen:versions                       # regenerate src/wire/tested-versions.generated.ts from test/fixtures/claude-code/*
 node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
-node bin/reflex.js report [--since 2h] [--usd] [--json]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile, 13 = escalations, 14 = effort; --json emits the same sections keyed by section number
+node bin/reflex.js report [--since 2h] [--usd] [--json]   # summarise ~/.reflex/decisions.jsonl (reads files only); section 0 = workflow profile, 13 = escalations, 14 = effort, 15 = quota exchange rate; --json emits the same sections keyed by section number
 node bin/reflex.js report --fingerprints   # unclassified side-call fingerprints as JSON lines (what users send back)
 node bin/reflex.js share [--since 7d] [--out f.jsonl]      # structural-only log for calibration; allow-list, writes a file, never uploads
 node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
@@ -38,9 +38,9 @@ src/wire/effort.ts + src/worker/effort-store.ts  REFLEX_EFFORT: the level by mes
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
 src/backend/  decision backends: jev.ts (the Jev wire client, also used for laya-serve), laya.ts + laya-calibration.ts (feature questions and the fitted head; a feature change bumps FEATURE_VERSION and needs a refit)
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
-src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-14 (0 = workflow profile, 11 = side-call fingerprints, 12 = side-call routing estimate, 13 = escalations, 14 = effort), no network
+src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-15 (0 = workflow profile, 11 = side-call fingerprints, 12 = side-call routing estimate, 13 = escalations, 14 = effort, 15 = quota exchange rate), no network
 src/report/share.ts  `reflex share`: the ALLOW-LIST of fields a shared log may contain. Adding a field to the decision record does NOT add it here; that is deliberate and test/unit/share.test.ts pins it
-src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, tested versions, unclassified side-call fingerprints, typed-vs-injected hook prompts
+src/wire/     the ONLY place that may know Claude Code / Anthropic request/response shapes: request classification (kind, turn, side_kind), markers, runtime shape checks, SSE usage parsing, quota headers, tested versions, unclassified side-call fingerprints, typed-vs-injected hook prompts
 ```
 
 Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacted real captures: `test/fixtures/claude-code/<version>/`.

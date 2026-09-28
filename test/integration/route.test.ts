@@ -183,6 +183,18 @@ describe("route mode", () => {
       assert.ok((rec.guard?.penalty_usd ?? 0) > 0.3);
     });
 
+    it("the quota the upstream reports reaches the decision record and the status line", async () => {
+      stack.upstream.setHandler((_req, res) => {
+        res.writeHead(200, { "content-type": "text/event-stream", "anthropic-ratelimit-unified-5h-utilization": "0.42", "anthropic-ratelimit-unified-5h-reset": "4102444800", "anthropic-ratelimit-unified-7d-utilization": "0.07" });
+        res.end('event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":0,"output_tokens":1}}}\n\n');
+      });
+      jev.set({ kind: "answer", tier: "sonnet", confidence: 0.9, reasoning: 2 });
+      const { rec } = await replay(stack, inSession(fx("main-new-turn"), "s-quota"));
+      assert.deepEqual(rec.quota, { "5h": { util: 0.42, reset: 4102444800 }, "7d": { util: 0.07, reset: null } });
+      const st = JSON.parse((await request(`${stack.url}/__reflex/status?session=another-session`)).body.toString()) as { quota: { name: string; pct: number }[] };
+      assert.deepEqual(st.quota.map((w) => [w.name, w.pct]), [["5h", 42], ["7d", 7]], "the account's quota, whatever the session");
+    });
+
     it("break-even: once the conversation has averages past its first response, a switch they would pay back is allowed", async () => {
       // Every response: a 20k-token prompt and 20k output tokens. The first response's write is the whole prompt and
       // is not averaged, so turn 2 has no averages (over_limit) and turn 3 has one response to average (breakeven).

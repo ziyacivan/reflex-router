@@ -215,3 +215,6 @@ reflex report
 
 14. Effort (REFLEX_EFFORT)
   (no effort decisions; REFLEX_EFFORT=1 turns them on)
+
+15. Quota exchange rate (estimate)
+  (no quota recorded: responses carried no anthropic-ratelimit-unified-* headers, e.g. an API key, or the records predate the field)

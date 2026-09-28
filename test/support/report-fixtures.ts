@@ -54,6 +54,8 @@ export interface DecOpts {
   escalation?: { signal: "correction" | "test_failure" | "reverted_edit"; from: T; to: T; decisionId: string | null; turnSeq?: number } | null;
   /** REFLEX_ESCALATE=shadow: recorded, not applied. */
   wouldEscalate?: { signal: "correction" | "test_failure" | "reverted_edit"; from: T; to: T; decisionId: string | null; turnSeq?: number } | null;
+  /** `quota` as the router writes it: per window, the used fraction and the reset (epoch s). */
+  quota?: Record<string, { util: number; reset: number | null }>;
 }
 
 /** One `decision` record. */
@@ -121,6 +123,7 @@ export function dec(o: DecOpts): Rec {
     ...(o.legacyTiming ? {} : { timing: { decision_wait_ms: o.wait ?? 0, decision_deadline_ms: 1500, upstream_first_byte_ms: Math.max(0, (o.msToHeaders ?? 900) - (o.wait ?? 0)) } }),
     usage: o.usage === null ? null : o.usage ? { input: o.usage[0], output: o.usage[1], cache_read: o.usage[2], cache_create: o.usage[3] } : { input: 5, output: 200, cache_read: 40000, cache_create: 500 },
     usage_unknown_reason: null,
+    ...(o.quota ? { quota: o.quota } : {}),
     error: o.error ?? null,
     sent: decided ? { keys: ["task", "context"], chars: 100 } : null,
   };

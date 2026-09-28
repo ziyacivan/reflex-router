@@ -685,6 +685,19 @@ through `--settings` is used, and the command sees the session's `ANTHROPIC_BASE
 (`src/wire/statusline.ts`). A new folder's trust dialog now defaults to "No, exit", so an interactive capture must run in
 a trusted folder or select "Yes".
 
+## 7.3 Subscription quota headers (2.1.277–2.1.281, subscription login)
+
+Every `/v1/messages` response to a subscription-authenticated session carries `anthropic-ratelimit-unified-*` headers
+(33 raw responses in the local captures, all four families; the committed fixtures list the names with values redacted,
+e.g. `2.1.280/manifest.json`). Per window (`5h`, `7d`): `-<window>-utilization`, a fraction with two decimals
+(`0.31`, i.e. **1% steps**), `-<window>-reset` (epoch seconds; constant across a window's requests) and
+`-<window>-status` (`allowed` seen). A third window, `7d_oi`, appeared only on `claude-fable-5-1` responses (3 of 4;
+none of 29 Opus/Sonnet/Haiku ones). Also sent: `-status`, `-reset`, `-representative-claim` (`five_hour`),
+`-fallback`, `-fallback-percentage`, `-overage-status`, `-overage-disabled-reason`. The share is the account's: it
+moves with usage outside reflex. The same responses carry `anthropic-organization-id`, so reflex never keeps the header
+map: `src/wire/ratelimit.ts` reads each window's utilisation, reset and status word, and the decision record keeps
+only `quota: {<window>: {util, reset}}` (not shared by `reflex share`).
+
 ## 8. Things that did NOT reproduce
 
 - **MCP draft-04 normalisation** (jev-router): verified only **in scope**. The fixture `haiku-mcp-draft4.main-new-turn.request.json` contains the construct (`$schema` draft-04, `minimum:0 + exclusiveMinimum:true`, `maximum:10 + exclusiveMaximum:false`), Claude Code sent it **unchanged** through a custom base URL, and the API returned **200** (one request, `claude-haiku-4-5-20251001`, `sdk-cli`). Not tested: Sonnet/Opus/Fable as the target, other draft-04 constructs (`id`, `definitions`, type arrays), the interactive entrypoint. So the compat rewrite is *not currently required*, which is weaker than *not needed*; if routing ever retargets a request to a model that rejects the schema, the 4xx retry-with-original path is the safety net. Recorded in `manifest.json` under `findings`.

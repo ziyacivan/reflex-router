@@ -26,6 +26,7 @@ import { followsPin, isMessagesRequest, parseRequest, type RequestView } from ".
 import { sideFingerprint, type SideFingerprint } from "../wire/fingerprint.js";
 import { EFFORTS, effortVia, messageEffort, withEffort, withTopEffort, type EffortEdit } from "../wire/effort.js";
 import { isVerifiedRetarget, retarget, retargetBetas } from "../wire/rewrite.js";
+import { parseQuota, type Quota } from "../wire/ratelimit.js";
 import { ShapeTracker } from "../wire/shape.js";
 import { DRIFT_MIN_TYPED_PROMPTS, DriftTracker } from "../wire/drift.js";
 import { TESTED_CLAUDE_VERSIONS } from "../wire/tested-versions.generated.js";
@@ -74,6 +75,8 @@ export interface RouterDeps {
   readonly effortStore?: EffortStore | null;
   /** The model the Agent tool call gave this subagent's task explicitly (PreToolUse), or null when it inherits. */
   readonly explicitModel?: (sessionId: string | null, task: string) => string | null;
+  /** Every response that reported the subscription quota, as its headers arrive (worker-global: the quota is the account's). */
+  readonly onQuota?: (quota: Quota, atMs: number) => void;
 }
 
 /** Handed to server.ts for one request as it is forwarded. */
@@ -138,6 +141,7 @@ interface Outcome {
 
 const SEVERITY: Readonly<Record<VersionLevel, number>> = { ok: 0, warn: 1, degrade: 2 };
 const NONE: DecisionPart = { decision: null, plan: null, error: null, sent: null, backend: null, guard: null, override: null, escalation: null, would_escalate: null, ab: null };
+const quotaRecord = (q: Quota): NonNullable<DecisionRecord["quota"]> => Object.fromEntries(Object.entries(q).map(([w, x]) => [w, { util: x.util, reset: x.reset }]));
 const guardRecord = (g: GuardResult | null): DecisionPart["guard"] => (g ? { allowed: g.allowed, reason: g.reason, ctx: g.ctx, penalty_usd: g.penaltyUsd, saving_usd: g.savingUsd } : null);
 
 export class Router {
@@ -401,6 +405,7 @@ export class Router {
     let finished = false;
     let fallbackStatus: number | null = null;
     let fallbackError: string | null = null;
+    let quota: Quota | null = null;
     const rewritten = sendBody !== body;
     // An effort-only rewrite leaves the model alone: its rejection says nothing about a tier.
     const routedTier = rewritten && sentModel !== v.requestedModel ? tierOfModel(sentModel) : null;
@@ -416,6 +421,8 @@ export class Router {
         const arrived = this.#now();
         msToHeaders = arrived - started;
         upstreamFirstByteMs = arrived - forwardStarted;
+        quota = parseQuota(h);
+        if (quota !== null) this.d.onQuota?.(quota, arrived);
         const ct = h["content-type"];
         const ce = h["content-encoding"];
         tee = new UsageTee(typeof ct === "string" ? ct : undefined, typeof ce === "string" ? ce : undefined);
@@ -485,6 +492,7 @@ export class Router {
               claude_version: v.clientVersion ?? this.d.claudeVersion,
               cache_ttl_beta: v.facts.betaExtendedCacheTtl,
               cache_ttl: v.facts.cacheTtl,
+              ...(quota !== null ? { quota: quotaRecord(quota) } : {}),
               requested: { model: v.requestedModel, tier: requestedTier, effort: v.requestedEffort },
               ...outcome.part,
               ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null, ...(effortSkip !== null ? { reasons: [...outcome.part.effort.reasons, effortSkip] } : {}) } } : {}),

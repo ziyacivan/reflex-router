@@ -11,7 +11,7 @@ import { loadConfig, type Config } from "../../src/config.js";
 import { DecisionLog, type DecisionRecord } from "../../src/log/decision-log.js";
 import type { Decision } from "../../src/types.js";
 import { Breaker } from "../../src/worker/breaker.js";
-import { Router } from "../../src/worker/router.js";
+import { Router, type RouterDeps } from "../../src/worker/router.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { waitFor } from "../support/http.js";
 
@@ -34,7 +34,7 @@ function opusRequest(name: string, sid: string, prefix = "", model = "claude-opu
   return { ...f, headers: { ...f.headers, "x-claude-code-session-id": sid }, body: Buffer.from(JSON.stringify(b)) };
 }
 
-function harness(): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
+function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number, resHeaders?: Record<string, string>): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reflex-router-"));
   const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50" });
   assert.ok(loaded.ok);
@@ -65,16 +65,16 @@ function harness(): { send(fx: Fixture, answer: Answer | null, cacheCreate?: num
     },
   };
   const log = new DecisionLog(home, false);
-  const router = new Router({ config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.277", backend, breaker: new Breaker(), log, logger: () => undefined });
+  const router = new Router({ config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.277", backend, breaker: new Breaker(), log, logger: () => undefined, ...(onQuota ? { onQuota } : {}) });
   const records = (): DecisionRecord[] => (fs.existsSync(log.file) ? fs.readFileSync(log.file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as DecisionRecord) : []);
   return {
     calls: () => calls,
-    async send(fx, a, cacheCreate = 60_000) {
+    async send(fx, a, cacheCreate = 60_000, resHeaders = {}) {
       answer = a;
       const before = records().length;
       const p = await router.prepare("POST", "/v1/messages?beta=true", fx.headers, fx.body);
       assert.ok(p.obs);
-      p.obs.headers(200, { "content-type": "text/event-stream" });
+      p.obs.headers(200, { "content-type": "text/event-stream", ...resHeaders });
       p.obs.tap(Buffer.from(`event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":${cacheCreate},"cache_read_input_tokens":0,"output_tokens":1}}}\n\nevent: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":50}}\n\n`));
       p.obs.finish(true);
       const all = await waitFor(() => (records().length > before ? records() : null));
@@ -223,5 +223,24 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.equal(r.rec.forwarded.rewritten, true);
     const c = await h.send(opusRequest("main-continuation", "U", "", "claude-opus-5-5"), null);
     assert.equal(c.sent["model"], "claude-sonnet-5");
+  });
+});
+
+describe("router: the subscription quota", () => {
+  it("records each window's share and reset, hands them on as the headers arrive, and keeps no other header", async () => {
+    const seen: unknown[] = [];
+    const h = harness((q) => seen.push(q));
+    const { rec } = await h.send(opusRequest("main-new-turn", "Q"), SONNETISH, 60_000, {
+      "anthropic-ratelimit-unified-5h-utilization": "0.31",
+      "anthropic-ratelimit-unified-5h-reset": "1790300400",
+      "anthropic-ratelimit-unified-5h-status": "allowed_warning",
+      "anthropic-ratelimit-unified-7d-utilization": "0.48",
+      "anthropic-organization-id": "org-secret",
+    });
+    assert.deepEqual(rec.quota, { "5h": { util: 0.31, reset: 1790300400 }, "7d": { util: 0.48, reset: null } });
+    assert.deepEqual(seen, [{ "5h": { util: 0.31, reset: 1790300400, status: "allowed_warning" }, "7d": { util: 0.48, reset: null, status: null } }]);
+    assert.doesNotMatch(JSON.stringify(rec), /org-secret|allowed_warning/);
+    const none = await h.send(opusRequest("main-continuation", "Q"), null);
+    assert.ok(!("quota" in none.rec), "no quota headers: no field");
   });
 });

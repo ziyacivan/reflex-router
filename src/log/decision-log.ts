@@ -60,6 +60,9 @@ export interface DecisionRecord {
   /** The `ttl` of the request's last cache breakpoint (src/wire/claude-code.ts `lastBreakpointTtl`): when the prefix it
    * wrote lapses. null: no breakpoint, or a TTL reflex does not know. Absent on records written before it existed. */
   readonly cache_ttl?: "5m" | "1h" | null;
+  /** The subscription quota the response reported (src/wire/ratelimit.ts): per window, the used fraction and the reset
+   * time (epoch seconds). Account-wide, so usage outside reflex moves it too. Absent when the response carried none. */
+  readonly quota?: Readonly<Record<string, { readonly util: number; readonly reset: number | null }>>;
   readonly backend: string | null;
   /**
    * Version of the decision backend that answered, as the backend itself reported it (Jev returns it as `model`, e.g.

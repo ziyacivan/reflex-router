@@ -1,7 +1,8 @@
 // `reflex statusline`: the `statusLine` command reflex injects into the claude it launches (unless the user has their
 // own). Claude Code shows the model it asked for; this line shows the one reflex actually sent. It asks the session's
 // own front door (ANTHROPIC_BASE_URL, loopback only) and prints one line; any failure prints an empty line. The dollar
-// figures are estimates at list prices, computed as `reflex report` section 8 does (src/worker/session-status.ts).
+// figures are estimates at list prices, computed as `reflex report` section 8 does (src/worker/session-status.ts). The
+// quota is the account's, as the API reports it (src/worker/quota-watch.ts).
 import http from "node:http";
 import { tierOfModel, tierRank } from "./tiers.js";
 import { EFFORTS } from "./wire/effort.js";
@@ -27,6 +28,15 @@ export interface StatusBody {
   readonly cache?: { readonly leftS: number; readonly lapseUsd: number } | null;
   /** The main chat's context shrank a turn or two ago: tokens before and after. */
   readonly context?: { readonly from: number; readonly to: number; readonly compacted: boolean } | null;
+  /** The subscription quota (account-wide): per window, whole percent used and, at the recent rate, seconds to 100%. */
+  readonly quota?: readonly QuotaWindow[];
+}
+interface QuotaWindow {
+  readonly name: string;
+  readonly pct: number;
+  readonly status: string | null;
+  readonly resetInS: number | null;
+  readonly limitInS: number | null;
 }
 interface EffortPair {
   readonly requested: string | null;
@@ -88,9 +98,35 @@ function cacheText(c: { readonly leftS: number; readonly lapseUsd: number }): st
   return `${DIM}Cache:${RESET} ${time}${usd === null ? "" : ` ${DIM}(lapse Est. +${usd})${RESET}`}`;
 }
 
+/** `40m`, `2h 10m`, `3d`: a coarse duration. */
+export function dur(s: number): string {
+  const m = Math.max(1, Math.round(s / 60));
+  if (m < 60) return `${m}m`;
+  if (m < 48 * 60) return m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  return `${Math.round(m / 1440)}d`;
+}
+
+/** Yellow from here on, or when the recent rate reaches 100% before the window resets. */
+const QUOTA_WARN_PCT = 80;
+/** Windows other than these show only when they are the ones worth a look. */
+const QUOTA_ALWAYS = new Set(["5h", "7d"]);
+
+/** `Quota: 5h 31% (limit in ~40m), 7d 48%`; `5h 100% (limited, resets in 1h 20m)` once the API refuses. */
+function quotaText(ws: readonly QuotaWindow[]): string | null {
+  const bits = ws.flatMap((w) => {
+    const limited = w.status === "rejected";
+    const warn = limited || w.status === "allowed_warning" || w.pct >= QUOTA_WARN_PCT || w.limitInS !== null;
+    if (!QUOTA_ALWAYS.has(w.name) && !warn) return [];
+    const note = limited ? ` (limited${w.resetInS === null ? "" : `, resets in ${dur(w.resetInS)}`})` : w.limitInS !== null ? ` (limit in ~${dur(w.limitInS)})` : "";
+    const text = `${w.name} ${w.pct}%${note}`;
+    return [warn ? `${YELLOW}${text}${RESET}` : text];
+  });
+  return bits.length === 0 ? null : `${DIM}Quota:${RESET} ${bits.join(", ")}`;
+}
+
 /**
  * Pure. The lines for one session; null prints nothing (not behind reflex, or nothing to say yet).
- *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Cache: 42m left (lapse Est. +$0.61)
+ *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Cache: 42m left (lapse Est. +$0.61) · Quota: 5h 31%, 7d 48%
  *   ↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)
  * One line per running subagent (changed or not), titled as Claude Code shows it (else `subagent N`, by start order).
  */
@@ -104,6 +140,8 @@ export function formatStatus(s: StatusBody | null): string | null {
   if (s.cost !== undefined && s.cost >= 0.005) parts.push(`${DIM}Est. Cost:${RESET} ${money(s.cost)}`);
   if (s.cache) parts.push(cacheText(s.cache));
   if (s.context) parts.push(contextText(s.context));
+  const q = quotaText(s.quota ?? []);
+  if (q !== null) parts.push(q);
   const subs = (s.subagents ?? []).map((x, i) => {
     const bits = [...(x.model !== null ? [modelText(x.model)] : []), ...(x.effort !== null && moved(x.effort) ? [effortText(x.effort)] : [])];
     const title = cleanTitle(x.title ?? "");

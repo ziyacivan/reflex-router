@@ -24,6 +24,7 @@ import { parseHookEvent, type HookEvent } from "../outcome/hooks.js";
 import { OutcomeTracker, type DecisionInfo } from "../outcome/tracker.js";
 import { RecentPrompts } from "./recent-prompts.js";
 import { ModelNotices } from "./model-notice.js";
+import { QuotaWatch } from "./quota-watch.js";
 import { SessionStatus } from "./session-status.js";
 
 export interface WorkerOptions {
@@ -107,6 +108,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
   const prompts = new RecentPrompts();
   const notices = new ModelNotices();
   const status = new SessionStatus();
+  const quota = new QuotaWatch();
   /** Agent calls that named their subagent's model, by session and prompt hash: those subagents are never routed. */
   const explicitModels = new Map<string, string>();
   const agentKey = (sessionId: string | null, prompt: string): string => `${sessionId ?? ""}\n${hashId(prompt.trim()) ?? ""}`;
@@ -133,6 +135,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
         log: decisionLog,
         logger: opts.log,
         onRecord: (record, sessionId) => status.addRecord(record, sessionId),
+        onQuota: (q, atMs) => quota.observe(q, atMs),
         onDecision: (d: DecisionInfo) => {
           tracker?.onDecision(d);
           notices.observe(d);
@@ -161,7 +164,7 @@ export async function startWorkerServer(opts: WorkerOptions): Promise<WorkerServ
 
     if (url.startsWith(STATUS_PATH + "?") && method === "GET") {
       const sessionId = new URL(url, "http://127.0.0.1").searchParams.get("session") ?? "";
-      const body = JSON.stringify({ worker: "up", ...status.get(sessionId) });
+      const body = JSON.stringify({ worker: "up", ...status.get(sessionId), quota: quota.get() });
       res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
       res.end(body);
       return;
