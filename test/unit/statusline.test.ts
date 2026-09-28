@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cleanTitle, fetchStatus, formatStatus, shortModel } from "../../src/statusline.js";
+import { cleanTitle, fetchStatus, formatStatus, shortModel, tokensShort } from "../../src/statusline.js";
 import { lastBreakpointTtl } from "../../src/wire/claude-code.js";
 import { parseStatusInput } from "../../src/wire/statusline.js";
 import { SessionStatus } from "../../src/worker/session-status.js";
@@ -53,8 +53,8 @@ describe("statusline", () => {
     s.observe(d({ turn: "side", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", turn: "continuation", sentModel: HAIKU }));
-    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0, cache: null });
-    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0, cache: null });
+    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0, cache: null, context: null });
+    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0, cache: null, context: null });
   });
 
   it("the cost is every record at the model sent", () => {
@@ -147,6 +147,37 @@ describe("statusline", () => {
     const yellow = `${String.fromCharCode(27)}[33m`;
     assert.ok(formatStatus({ ...base, cache: { leftS: 4 * 60, lapseUsd: 0 } })?.includes(`${yellow}4m left`));
     assert.ok(!formatStatus({ ...base, cache: { leftS: 6 * 60, lapseUsd: 0 } })?.includes(`${yellow}6m left`));
+  });
+
+  it("a shrunk main-chat context is shown for the turn it happened and two more; compared per session, not per conversation", () => {
+    const s = new SessionStatus();
+    let t = Date.parse("2026-09-28T10:00:00.000Z");
+    const rec = (ctx: number, o: Record<string, unknown> = {}) => ({ id: "r", at: new Date((t += 1000)).toISOString(), turn: "new", kind: "main", conv: "c1", requested: { model: OPUS, tier: "opus" }, forwarded: { model: OPUS, rewritten: false, fallback: false }, upstream: { status: 200 }, usage: { input: 10, output: 500, cache_read: ctx - 10, cache_create: 0 }, ...o }) as unknown as DecisionRecord;
+    s.addRecord(rec(180_000), "s1");
+    s.addRecord(rec(150_000, { turn: "continuation" }), "s1"); // 83%: not a drop
+    s.addRecord(rec(140_000, { kind: "subagent" }), "s1"); // not the main chat
+    assert.equal(s.get("s1").context, null);
+    s.addRecord(rec(150_000, { turn: "side", side_kind: "compaction" }), "s1");
+    s.addRecord(rec(41_000, { conv: "c2" }), "s1"); // the first request after /compact: a new conversation key
+    assert.deepEqual(s.get("s1").context, { from: 150_000, to: 41_000, compacted: true });
+    s.addRecord(rec(45_000, { turn: "continuation", conv: "c2" }), "s1");
+    s.addRecord(rec(50_000, { conv: "c2" }), "s1");
+    s.addRecord(rec(55_000, { conv: "c2" }), "s1");
+    assert.notEqual(s.get("s1").context, null, "two more new turns still show it");
+    s.addRecord(rec(60_000, { conv: "c2" }), "s1");
+    assert.equal(s.get("s1").context, null);
+    s.addRecord(rec(30_000, { conv: "c3" }), "s1"); // /clear: no compaction call in between
+    assert.deepEqual(s.get("s1").context, { from: 60_000, to: 30_000, compacted: false });
+    s.addRecord(rec(25_000, { conv: "c3" }), "s1"); // a smaller drop than 20k tokens is not one
+    assert.equal(s.get("s1").context?.to, 30_000);
+    assert.equal(s.get("s2").context, null);
+  });
+
+  it("shows the context drop with short token counts", () => {
+    const base = { worker: "up" as const, main: { requested: OPUS, sent: OPUS }, subagents: [] };
+    assert.equal(plain(formatStatus({ ...base, context: { from: 183_400, to: 40_600, compacted: true } })), "Reflex: Opus 5.5 · Context: compacted 183k→41k");
+    assert.equal(plain(formatStatus({ ...base, context: { from: 1_240_000, to: 30_000, compacted: false } })), "Reflex: Opus 5.5 · Context: dropped 1.2M→30k");
+    assert.deepEqual([999_600, 999_400, 950].map(tokensShort), ["1.0M", "999k", "950"]);
   });
 
   it("never replaces the user's own status line", () => {

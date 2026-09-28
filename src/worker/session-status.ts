@@ -2,7 +2,8 @@
 // request, the same for each subagent, the effort level REFLEX_EFFORT last applied against the client's (main chat and
 // each subagent until its SubagentStop), each subagent's title (the Agent call's description, in memory only), the session's
 // estimated cost (every recorded request, side calls too, at the model sent, list prices), and how long the main chat's
-// prompt cache has left with what a lapse would add. No saving: the only honest one is section 8's REFLEX_AB comparison,
+// prompt cache has left with what a lapse would add, and for a few turns after the main chat's context shrank (a
+// compaction, /clear, cleared tool results) its size before and after. No saving: the only honest one is section 8's REFLEX_AB comparison,
 // which needs a whole log, not a session. Model ids, level names, subagent titles, times and dollar sums only, in memory
 // only, served on loopback (GET /__reflex/status); never logged.
 import type { DecisionRecord } from "../log/decision-log.js";
@@ -40,6 +41,19 @@ export interface CacheStatus {
 
 const TTL_MS: Readonly<Record<CacheTtl, number>> = { "5m": 5 * 60_000, "1h": 60 * 60_000 };
 
+/** The main chat's context shrank: tokens before and after, and whether a compaction call came in between. */
+export interface ContextDrop {
+  readonly from: number;
+  readonly to: number;
+  readonly compacted: boolean;
+}
+
+/** A drop is to below this share of the context before it, by at least DROP_MIN_TOKENS: noise and small trims are not. */
+const DROP_SHARE = 0.6;
+const DROP_MIN_TOKENS = 20_000;
+/** New main-chat turns after the one that showed the drop that still show it. */
+const DROP_TURNS = 2;
+
 export interface SessionStatusBody {
   readonly main: ModelPair | null;
   readonly subagents: readonly SubagentStatus[];
@@ -48,6 +62,8 @@ export interface SessionStatusBody {
   readonly cost: number;
   /** null: no main-chat request with a cache breakpoint answered yet (or none since the worker started). */
   readonly cache: CacheStatus | null;
+  /** null: no drop, or its turns have passed. */
+  readonly context: ContextDrop | null;
 }
 
 type Sub = { -readonly [K in keyof SubagentStatus]: SubagentStatus[K] } & { agentId: string | null; done: boolean };
@@ -61,6 +77,8 @@ export class SessionStatus {
   readonly #cost = new Map<string, number>();
   readonly #mainEffort = new Map<string, EffortPair>();
   readonly #cache = new Map<string, { atMs: number; ttl: CacheTtl; lapseUsd: number }>();
+  readonly #ctx = new Map<string, { atMs: number; tokens: number; compacted: boolean }>();
+  readonly #drop = new Map<string, ContextDrop & { turns: number }>();
 
   observe(d: DecisionInfo): void {
     if (d.sessionId === null || d.sentModel === null || d.turn === "side") return;
@@ -107,6 +125,7 @@ export class SessionStatus {
     if (d === null || sessionId === null) return;
     this.#cost.set(sessionId, (this.#cost.get(sessionId) ?? 0) + costOf([d]).atSentUsd);
     this.#noteCache(record, d, sessionId);
+    this.#noteContext(record, d, sessionId);
     // An applied level holds for the conversation until a later decided turn applies another.
     const e = d.effort;
     if (e === null || e.via === null || e.target === null || d.fallback) return;
@@ -131,14 +150,37 @@ export class SessionStatus {
     this.#cache.set(sessionId, { atMs: d.atMs, ttl, lapseUsd: cacheLapseUsd(d.sentTier, d.sentModel, tokens, ttl) });
   }
 
+  /**
+   * Compared per session, not per conversation: a compaction or /clear starts a new conversation key (the first message
+   * changes), and that switch is exactly the drop to show.
+   */
+  #noteContext(record: DecisionRecord, d: Dec, sessionId: string): void {
+    const prev = this.#ctx.get(sessionId);
+    if (d.kind !== "main") return;
+    if (d.turn === "side") {
+      if (d.sideKind === "compaction" && prev !== undefined) prev.compacted = true;
+      return;
+    }
+    const u = d.usage;
+    if (u === null || record.upstream.status !== 200 || (prev !== undefined && prev.atMs > d.atMs)) return;
+    const tokens = u.input + u.cacheRead + u.cacheCreate;
+    const drop = this.#drop.get(sessionId);
+    if (prev !== undefined && tokens < prev.tokens * DROP_SHARE && prev.tokens - tokens >= DROP_MIN_TOKENS) {
+      this.#drop.set(sessionId, { from: prev.tokens, to: tokens, compacted: prev.compacted, turns: 0 });
+    } else if (drop !== undefined && d.turn === "new" && ++drop.turns > DROP_TURNS) this.#drop.delete(sessionId);
+    this.#ctx.set(sessionId, { atMs: d.atMs, tokens, compacted: false });
+  }
+
   get(sessionId: string, now = Date.now()): SessionStatusBody {
     const c = this.#cache.get(sessionId);
+    const drop = this.#drop.get(sessionId);
     return {
       main: this.#main.get(sessionId) ?? null,
       subagents: [...(this.#subs.get(sessionId)?.values() ?? [])].filter((x) => !x.done).map(({ title, model, effort }) => ({ title, model, effort })),
       effort: { main: this.#mainEffort.get(sessionId) ?? null },
       cost: this.#cost.get(sessionId) ?? 0,
       cache: c === undefined ? null : { ttl: c.ttl, leftS: Math.floor((c.atMs + TTL_MS[c.ttl] - now) / 1000), lapseUsd: c.lapseUsd },
+      context: drop === undefined ? null : { from: drop.from, to: drop.to, compacted: drop.compacted },
     };
   }
 }

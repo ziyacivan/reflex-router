@@ -25,6 +25,8 @@ export interface StatusBody {
   readonly effort?: { readonly main: EffortPair | null };
   /** The main chat's prompt cache: seconds left and the estimated $ a lapse adds to the next request. */
   readonly cache?: { readonly leftS: number; readonly lapseUsd: number } | null;
+  /** The main chat's context shrank a turn or two ago: tokens before and after. */
+  readonly context?: { readonly from: number; readonly to: number; readonly compacted: boolean } | null;
 }
 interface EffortPair {
   readonly requested: string | null;
@@ -70,6 +72,13 @@ const SEP = ` ${DIM}·${RESET} `;
 /** Yellow from here on: time to decide whether to send something or let it lapse. */
 const CACHE_WARN_S = 5 * 60;
 
+/** `183k`, `1.2M`, `950`: context sizes at a glance. */
+export const tokensShort = (n: number): string => (n >= 999_500 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
+/** `Context: compacted 183k→41k`; `dropped` when no compaction call came in between (/clear, cleared tool results). */
+const contextText = (c: { readonly from: number; readonly to: number; readonly compacted: boolean }): string =>
+  `${DIM}Context:${RESET} ${YELLOW}${c.compacted ? "compacted" : "dropped"} ${tokensShort(c.from)}→${tokensShort(c.to)}${RESET}`;
+
 /** `Cache: 42m left (lapse Est. +$0.61)`, `Cache: lapsed (next turn Est. +$0.61)`; a lapse under a cent is not priced. */
 function cacheText(c: { readonly leftS: number; readonly lapseUsd: number }): string {
   const usd = c.lapseUsd >= 0.005 ? money(c.lapseUsd) : null;
@@ -94,6 +103,7 @@ export function formatStatus(s: StatusBody | null): string | null {
   if (me !== null && moved(me)) parts.push(effortText(me));
   if (s.cost !== undefined && s.cost >= 0.005) parts.push(`${DIM}Est. Cost:${RESET} ${money(s.cost)}`);
   if (s.cache) parts.push(cacheText(s.cache));
+  if (s.context) parts.push(contextText(s.context));
   const subs = (s.subagents ?? []).map((x, i) => {
     const bits = [...(x.model !== null ? [modelText(x.model)] : []), ...(x.effort !== null && moved(x.effort) ? [effortText(x.effort)] : [])];
     const title = cleanTitle(x.title ?? "");
