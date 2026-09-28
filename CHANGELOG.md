@@ -6,6 +6,29 @@
 
 _Nothing yet._
 
+## 0.6.0 — 2026-09-28
+
+### Added
+
+- **Prompt-cache countdown in the status line.** `Cache: 42m left (lapse Est. +$0.61)`: time left until the main
+  chat's prompt cache lapses, counted from its last answered request for the TTL that request asked for (Claude Code's
+  main chat asks for 1 hour), and what the next turn pays more once it has (the whole context written again instead of
+  read, at the model it went to; a list-price estimate). Yellow in the last five minutes, `lapsed` after.
+- **Context-drop notice in the status line.** `Context: compacted 183k→41k` for three turns after the main chat's
+  context shrank below 60% of the previous request's (by at least 20k tokens); `dropped` when no compaction call came in
+  between (`/clear`, cleared tool results).
+- The decision record carries `cache_ttl`, the TTL of the request's last cache breakpoint (not in `reflex share`).
+
+### Fixed
+
+- **Piped `reflex report` was cut at 64 KiB**, losing sections 13-14 (`reflex report | less`). reflex now exits only
+  after its output has been written.
+- **A request with thinking disabled or a forced `tool_choice` is no longer retargeted to a model that rejects it**
+  (thinking disabled: Opus 5.5, Fable 5.x; `tool_choice` `any`/`tool`: Opus 5.5, Fable 5.1, per the API documentation).
+  It stays on the model it asked for instead of failing once and being resent. Not seen in Claude Code's main chat or
+  subagents so far.
+- Fable 5 is priced with its own cache-read rate ($1/MTok, not Fable 5.1's $0.25). Prices verified 2026-09-28.
+
 ## 0.5.9 — 2026-09-26
 
 ### Changed

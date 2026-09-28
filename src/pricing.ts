@@ -5,7 +5,7 @@
 // subscription plans (whose limits are not priced per token at all).
 import type { Tier } from "./config.js";
 
-export const LAST_VERIFIED = "2026-09-25";
+export const LAST_VERIFIED = "2026-09-28";
 
 export interface TierPrice {
   /** $ per million base input tokens. */
@@ -28,6 +28,8 @@ export const PRICES: Readonly<Record<Tier, TierPrice>> = {
 const MODEL_PRICES: readonly (readonly [string, TierPrice])[] = [
   ["claude-opus-5-5", PRICES.opus],
   ["claude-opus-", { input: 5, output: 25, cacheReadMult: 0.1 }], // Opus 5, 4.8, 4.7, 4.6, 4.5
+  ["claude-fable-5-1", PRICES.fable],
+  ["claude-fable-5", { input: 10, output: 50, cacheReadMult: 0.1 }], // Fable 5: cache reads $1, not 5.1's $0.25
 ];
 
 /** Price of `model` (a model id of `tier`), or the tier default when the model is unknown or has no row of its own. */

@@ -22,6 +22,8 @@ describe("pricing", () => {
     assert.deepEqual(priceOf("opus", "claude-opus-5-5[1m]"), PRICES.opus);
     assert.deepEqual(priceOf("opus", null), PRICES.opus);
     assert.deepEqual(priceOf("sonnet", "claude-sonnet-5"), PRICES.sonnet);
+    assert.deepEqual(priceOf("fable", "claude-fable-5-1"), PRICES.fable);
+    assert.deepEqual(priceOf("fable", "claude-fable-5"), { input: 10, output: 50, cacheReadMult: 0.1 }, "Fable 5 reads its cache at 0.1x");
   });
   it("cache write is 1.25x (5m) / 2x (1h) of input, read 0.1x (0.025x on Fable)", () => {
     assert.equal(cacheWriteUsd("haiku", 1_000_000, "5m"), 1.25);
