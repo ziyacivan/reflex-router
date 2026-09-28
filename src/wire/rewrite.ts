@@ -86,6 +86,17 @@ export function retargetBetas(header: string | undefined, to: Tier): { readonly 
   return { value: parts.filter((b) => !stripped.includes(b)).join(","), stripped };
 }
 
+/**
+ * Target models that 400 on a shape no rewrite can keep the meaning of, matched by substring of the model id. A request
+ * carrying one is not rewritten: it goes to the model it asked for (API docs, 2026-09: Opus 5.5 and Fable 5.x reject
+ * `thinking: {type: "disabled"}` at every effort level; Opus 5.5 and Fable 5.1 reject `tool_choice` `any`/`tool`,
+ * "tool_choice: type \"tool\" and \"any\" are not supported for this model."). Claude Code sends thinking disabled only
+ * on side calls so far (fixtures interactive.title-generation, ultracode.main-side-no-tools), which are not routed.
+ */
+const REJECTS_DISABLED_THINKING: readonly string[] = ["claude-opus-5-5", "claude-fable-5"];
+const REJECTS_FORCED_TOOL_CHOICE: readonly string[] = ["claude-opus-5-5", "claude-fable-5-1"];
+const matches = (list: readonly string[], model: string): boolean => list.some((m) => model.toLowerCase().includes(m));
+
 export interface RewriteOptions {
   readonly from: Tier;
   readonly to: Tier;
@@ -96,7 +107,7 @@ export interface RewriteOptions {
 
 export type RewriteResult =
   | { readonly ok: true; readonly body: Buffer; readonly fields: readonly string[] }
-  | { readonly ok: false; readonly reason: "not_json" | "no_messages" | "thinking_budget_too_small" | "system_block_unfoldable" };
+  | { readonly ok: false; readonly reason: "not_json" | "no_messages" | "thinking_budget_too_small" | "system_block_unfoldable" | "thinking_disabled_rejected" | "forced_tool_choice_rejected" };
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -176,6 +187,10 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
     return { ok: false, reason: "not_json" };
   }
   if (!Array.isArray(b["messages"])) return { ok: false, reason: "no_messages" };
+  const th0 = b["thinking"];
+  if (isObj(th0) && th0["type"] === "disabled" && matches(REJECTS_DISABLED_THINKING, opts.model)) return { ok: false, reason: "thinking_disabled_rejected" };
+  const tc = b["tool_choice"];
+  if (isObj(tc) && (tc["type"] === "any" || tc["type"] === "tool") && matches(REJECTS_FORCED_TOOL_CHOICE, opts.model)) return { ok: false, reason: "forced_tool_choice_rejected" };
   const fields: string[] = [];
 
   b["model"] = opts.model;

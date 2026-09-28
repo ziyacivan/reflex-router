@@ -611,6 +611,16 @@ First request of `claude -p "Reply with the single word ok." --output-format jso
 servers connect in the background, so it varies with timing): 28,376 input tokens without reflex, 44,456 behind reflex
 0.5.5, 28,167 with the change. Runs that route mode sent to Haiku are excluded (another tokenizer).
 
+### 5.11 Shapes Opus 5.5 and Fable 5.x reject (API documentation, not measured here)
+
+Per Anthropic's API documentation (2026-09): Opus 5.5 and Fable 5.x return 400 on `thinking: {"type": "disabled"}` at
+every effort level, and Opus 5.5 and Fable 5.1 on `tool_choice` `{"type": "any"}` / `{"type": "tool"}` ("tool_choice:
+type \"tool\" and \"any\" are not supported for this model."). Neither has a rewrite that keeps its meaning (turning
+thinking on, or dropping the forced tool), so a request carrying one is not retargeted to those models
+(`src/wire/rewrite.ts`, `REJECTS_DISABLED_THINKING` / `REJECTS_FORCED_TOOL_CHOICE`) and goes to the model it asked for,
+recorded as `rewrite_failed`. In the captures, Claude Code sends thinking disabled only on side calls (title generation,
+`no_tools`), which reflex does not route, and never sends `tool_choice`.
+
 ## 6. Responses
 
 Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed. The interactive client offers `zstd`, which `node:zlib` cannot decode before Node 22.15, so reflex narrows `accept-encoding` toward the upstream to the client's own offer restricted to `gzip, br, deflate` (absent stays absent). A response in any other coding is relayed untouched and logged as `usage_unknown_reason: "encoding:<name>"`. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).

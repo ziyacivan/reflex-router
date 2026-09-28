@@ -252,3 +252,35 @@ describe("retarget with MCP tool search on (2.1.282)", () => {
     }
   });
 });
+
+describe("retarget: shapes a target rejects and no rewrite can keep", () => {
+  const body = (o: Json): Buffer => Buffer.from(JSON.stringify({ model: "claude-sonnet-5", max_tokens: 32000, messages: [{ role: "user", content: "hi" }], ...o }));
+  const to = (model: string, tier: "opus" | "fable" | "sonnet", o: Json) => retarget(body(o), { from: "sonnet", to: tier, model });
+
+  it("thinking disabled is never sent to Opus 5.5 or Fable 5.x (400 at every effort); Opus 5 and Sonnet take it", () => {
+    const off = { thinking: { type: "disabled" } };
+    assert.deepEqual(to("claude-opus-5-5", "opus", off), { ok: false, reason: "thinking_disabled_rejected" });
+    assert.deepEqual(to("claude-opus-5-5[1m]", "opus", off), { ok: false, reason: "thinking_disabled_rejected" });
+    assert.deepEqual(to("claude-fable-5-1", "fable", off), { ok: false, reason: "thinking_disabled_rejected" });
+    assert.deepEqual(to("claude-fable-5", "fable", off), { ok: false, reason: "thinking_disabled_rejected" });
+    assert.ok(to("claude-opus-5", "opus", off).ok);
+    assert.ok(retarget(body(off), { from: "opus", to: "sonnet", model: "claude-sonnet-5" }).ok);
+  });
+
+  it("forced tool_choice (any, tool) is never sent to Opus 5.5 or Fable 5.1; auto and none are", () => {
+    for (const type of ["any", "tool"]) {
+      const forced = { tool_choice: { type, ...(type === "tool" ? { name: "Bash" } : {}) } };
+      assert.deepEqual(to("claude-opus-5-5", "opus", forced), { ok: false, reason: "forced_tool_choice_rejected" });
+      assert.deepEqual(to("claude-fable-5-1", "fable", forced), { ok: false, reason: "forced_tool_choice_rejected" });
+      assert.ok(to("claude-fable-5", "fable", forced).ok, "Fable 5 takes forced tool use");
+      assert.ok(to("claude-opus-5", "opus", forced).ok);
+    }
+    for (const type of ["auto", "none"]) assert.ok(to("claude-opus-5-5", "opus", { tool_choice: { type } }).ok);
+  });
+
+  it("thinking enabled with a budget still becomes adaptive for Opus 5.5 (the rewrite that keeps its meaning)", () => {
+    const r = to("claude-opus-5-5", "opus", { thinking: { type: "enabled", budget_tokens: 8000 } });
+    assert.ok(r.ok);
+    assert.deepEqual((JSON.parse(r.body.toString()) as Json)["thinking"], { type: "adaptive" });
+  });
+});
