@@ -921,23 +921,28 @@ export const PREFIX_DOMINATED_SHARE = 0.8;
 /** Tiers a side call could be sent to, cheapest first. Both are priced: the cheaper one cannot hold the big calls. */
 export const SIDE_TIER_CANDIDATES: readonly Tier[] = ["haiku", "sonnet"];
 const TTL_SECONDS = { "5m": 300, "1h": 3600 } as const;
-/** Without the `extended-cache-ttl` beta on the record, assume the shorter window: it is the pessimistic reading. */
+/** With no TTL on the record, assume the shorter window: it is the pessimistic reading. */
 const ASSUMED_TTL: CacheTtl = "5m";
 
-const ttlOf = (d: Dec): CacheTtl => (d.cacheTtlBeta === true ? "1h" : ASSUMED_TTL);
+/**
+ * The TTL a record's request ran at: `cache_ttl` (read from the body) when recorded; before that field existed, the
+ * `extended-cache-ttl` beta, which permits a 1-hour write without proving one; null when the record carries neither.
+ */
+const knownTtl = (d: Dec): CacheTtl | null => d.cacheTtl ?? (d.cacheTtlBeta === null ? null : d.cacheTtlBeta ? "1h" : "5m");
+const ttlOf = (d: Dec): CacheTtl => knownTtl(d) ?? ASSUMED_TTL;
 /**
  * The TTL the priced traffic actually ran at, or null when the log cannot say.
  *
  * Scoped to the side calls section 12 prices, not to every record: a continuation's TTL says nothing about what
- * routing these calls would cost. Known only when every one of those that carries `cache_ttl_beta` agrees. Both other
+ * routing these calls would cost. Known only when every one of those that carries a TTL (`knownTtl`) agrees. Both other
  * cases stay null and keep both candidate rows: records written before the field existed carry nothing, and a mix is
- * real rather than an artefact -- some side calls legitimately drop the beta (compaction is the documented one), so a
+ * real rather than an artefact -- some side calls legitimately ask for no 1-hour TTL (compaction is the documented one), so a
  * log can genuinely contain both windows and neither row would be the measured one.
  */
 function measuredTtl(decisions: readonly Dec[]): CacheTtl | null {
-  const priced = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && d.cacheTtlBeta !== null);
+  const priced = decisions.filter((d) => d.turn === "side" && d.sideKind !== null && SIDE_ROUTABLE_KINDS.includes(d.sideKind) && d.usage !== null && knownTtl(d) !== null);
   if (priced.length === 0) return null;
-  const on = priced.filter((x) => x.cacheTtlBeta === true).length;
+  const on = priced.filter((x) => knownTtl(x) === "1h").length;
   return on === priced.length ? "1h" : on === 0 ? "5m" : null;
 }
 /**
@@ -996,7 +1001,7 @@ export interface SideRoutingEstimate {
   readonly observedWarmPerCold: number | null;
   readonly overCeiling: number;
   readonly overCeilingTokens: number;
-  /** No record in the sample logged the cache-TTL beta, so the shorter TTL was assumed throughout. */
+  /** No record in the sample carried a TTL (`cache_ttl`, or the older beta flag), so the shorter TTL was assumed throughout. */
   readonly ttlAssumed: boolean;
   readonly convs: ConvExposure[];
 }
@@ -1119,7 +1124,7 @@ export function sideRoutingEstimate(decisions: readonly Dec[], opts: SideRouting
     tier,
     breakEven: breakEvenOf(cacheWriteRate(tier, dominant), cacheReadRate(tierOfModel(reqModel) ?? "opus", reqModel) - readRate),
     observedWarmPerCold: cold === 0 ? null : warm / cold,
-    ttlAssumed: opts.ttl === undefined && decisions.every((d) => d.cacheTtlBeta === null),
+    ttlAssumed: opts.ttl === undefined && decisions.every((d) => knownTtl(d) === null),
     convs: convExposure(decisions),
   };
 }

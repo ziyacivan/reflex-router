@@ -199,6 +199,16 @@ describe("report: side-call routing estimate", () => {
     assert.match(s12SideRouting({ rec: parse(decs(true)), byId: new Map(), usd: true }).join("\n"), /at the 1h cache TTL every priced side call in range reports/);
   });
 
+  it("the TTL a request asked for (cache_ttl) wins over the beta flag, which only permits a 1-hour write", () => {
+    const side = (o: Record<string, unknown>) => parse(toJsonl([{ ...dec({ id: "z", t: 0, conv: "z", turn: "side", side: "notification" }), ...o }])).decisions;
+    const est = (o: Record<string, unknown>) => sideRoutingEstimate(side(o), { tier: "haiku" });
+    assert.equal(est({ cache_ttl: "5m", cache_ttl_beta: true }).ttlAssumed, false);
+    const log = (o: Record<string, unknown>): string => toJsonl(sideCallLog().trim().split("\n").map((l) => ({ ...(JSON.parse(l) as Record<string, unknown>), ...o })));
+    const text = (o: Record<string, unknown>): string => s12SideRouting({ rec: parse(log(o)), byId: new Map(), usd: true }).join("\n");
+    assert.match(text({ cache_ttl: "5m", cache_ttl_beta: true }), /at the 5m cache TTL every priced side call in range reports/, "the beta did not make these 1-hour writes");
+    assert.match(text({ cache_ttl: null, cache_ttl_beta: true }), /at the 1h cache TTL/, "without cache_ttl, the older beta reading stands");
+  });
+
   it("the TTL is flagged as assumed when no record logged the beta", () => {
     assert.equal(sideRoutingEstimate(parse(sideCallLog()).decisions, { tier: "haiku" }).ttlAssumed, true);
     const withBeta = toJsonl([{ ...dec({ id: "z", t: 0, conv: "z", turn: "side", side: "notification" }), cache_ttl_beta: true }]);
