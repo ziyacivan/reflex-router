@@ -54,6 +54,12 @@ export const cacheReadRate = (tier: Tier, model?: string | null): number => pric
 /** $ per million tokens to write into the cache of `tier` at `ttl` (the rate `cacheWriteUsd` charges, not a $ amount). */
 export const cacheWriteRate = (tier: Tier, ttl: CacheTtl): number => priceOf(tier).input * CACHE_WRITE_MULT[ttl];
 
+/** $ more the next request pays when a cached prefix of `tokens` on `model` has lapsed: written again instead of read. */
+export const cacheLapseUsd = (tier: Tier, model: string | null, tokens: number, ttl: CacheTtl): number => {
+  const p = priceOf(tier, model);
+  return (tokens * p.input * (CACHE_WRITE_MULT[ttl] - p.cacheReadMult)) / 1_000_000;
+};
+
 /** Token counts of one response, as `usage` in the decision log. */
 export interface UsageTokens {
   readonly input: number;

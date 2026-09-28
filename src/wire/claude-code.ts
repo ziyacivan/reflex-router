@@ -40,8 +40,12 @@ export interface ShapeFacts {
   readonly lastNonSystemRole: string | null;
   readonly betaMidConversationSystem: boolean;
   readonly betaExtendedCacheTtl: boolean;
+  /** TTL of the request's last cache breakpoint (the one that caches the whole prefix); null: none, or a TTL not known here. */
+  readonly cacheTtl: CacheTtl | null;
   readonly maxTokens: number | null;
 }
+
+export type CacheTtl = "5m" | "1h";
 
 export interface RequestView {
   readonly sessionId: string | null;
@@ -305,6 +309,20 @@ export function isTypedPrompt(prompt: string): boolean {
 }
 
 /**
+ * The `ttl` of the last `cache_control` in prefix order (tools, system, then message blocks): that breakpoint writes
+ * the whole prefix, so it is when the conversation's cache lapses. Without a `ttl` the API default, 5m, applies. The
+ * main chat marks every breakpoint `"ttl": "1h"`, subagents and compaction mark none (fixtures 2.1.277-2.1.282).
+ */
+export function lastBreakpointTtl(b: Json): CacheTtl | null {
+  const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const blocks = [...list(b["tools"]), ...list(b["system"]), ...list(b["messages"]).flatMap((m) => (isObj(m) ? list(m["content"]) : []))];
+  const last = blocks.filter((x) => isObj(x) && isObj(x["cache_control"])).at(-1) as Json | undefined;
+  if (last === undefined) return null;
+  const ttl = (last["cache_control"] as Json)["ttl"];
+  return ttl === undefined || ttl === "5m" ? "5m" : ttl === "1h" ? "1h" : null;
+}
+
+/**
  * `typedPrompts`: looks up the prompts UserPromptSubmit delivered for a session (the worker's memory), null when none
  * has arrived. Omitted by callers that have no hook stream (tests, spikes): an interjection is then never claimed and
  * such a request stays `side` / `tool_result_text`.
@@ -389,6 +407,7 @@ export function parseRequest(
         lastNonSystemRole: str(nonSystem.at(-1)?.["role"]),
         betaMidConversationSystem: betas.some((x) => x.startsWith(BETA_MID_CONVERSATION_SYSTEM)),
         betaExtendedCacheTtl: betas.some((x) => x.startsWith(BETA_EXTENDED_CACHE_TTL)),
+        cacheTtl: lastBreakpointTtl(b),
         maxTokens: typeof b["max_tokens"] === "number" ? b["max_tokens"] : null,
       },
     },

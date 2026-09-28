@@ -484,6 +484,7 @@ export class Router {
               shape: { status: s.shape.status, violations: violations.map((x) => x.check) },
               claude_version: v.clientVersion ?? this.d.claudeVersion,
               cache_ttl_beta: v.facts.betaExtendedCacheTtl,
+              cache_ttl: v.facts.cacheTtl,
               requested: { model: v.requestedModel, tier: requestedTier, effort: v.requestedEffort },
               ...outcome.part,
               ...(outcome.part.effort ? { effort: { ...outcome.part.effort, via: fallbackStatus === null ? effortApplied : null, ...(effortSkip !== null ? { reasons: [...outcome.part.effort.reasons, effortSkip] } : {}) } } : {}),

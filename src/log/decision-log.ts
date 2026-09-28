@@ -55,8 +55,11 @@ export interface DecisionRecord {
   readonly shape: { readonly status: string; readonly violations: readonly string[] };
   readonly claude_version: string | null;
   /** The request carried the `extended-cache-ttl` beta, so its cache writes may be 1-hour ones. The beta permits a
-   * 1-hour write, it does not prove every breakpoint used one; it is the only TTL signal on the wire. */
+   * 1-hour write, it does not prove every breakpoint used one; `cache_ttl` says which one the request asked for. */
   readonly cache_ttl_beta: boolean;
+  /** The `ttl` of the request's last cache breakpoint (src/wire/claude-code.ts `lastBreakpointTtl`): when the prefix it
+   * wrote lapses. null: no breakpoint, or a TTL reflex does not know. Absent on records written before it existed. */
+  readonly cache_ttl?: "5m" | "1h" | null;
   readonly backend: string | null;
   /**
    * Version of the decision backend that answered, as the backend itself reported it (Jev returns it as `model`, e.g.

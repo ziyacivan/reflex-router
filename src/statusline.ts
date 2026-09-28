@@ -23,6 +23,8 @@ export interface StatusBody {
   readonly cost?: number;
   /** REFLEX_EFFORT: the level last applied to the main chat, with the client's own. */
   readonly effort?: { readonly main: EffortPair | null };
+  /** The main chat's prompt cache: seconds left and the estimated $ a lapse adds to the next request. */
+  readonly cache?: { readonly leftS: number; readonly lapseUsd: number } | null;
 }
 interface EffortPair {
   readonly requested: string | null;
@@ -65,10 +67,21 @@ const modelText = (p: Pair): string =>
   routed(p) ? `${YELLOW}${arrow(p)} ${shortModel(p.sent)}${RESET} ${DIM}(asked ${shortModel(p.requested as string)})${RESET}` : shortModel(p.sent);
 const effortText = (p: EffortPair): string => `${DIM}Effort:${RESET} ${YELLOW}${effortArrow(p)} ${p.level}${RESET} ${DIM}(asked ${p.requested as string})${RESET}`;
 const SEP = ` ${DIM}·${RESET} `;
+/** Yellow from here on: time to decide whether to send something or let it lapse. */
+const CACHE_WARN_S = 5 * 60;
+
+/** `Cache: 42m left (lapse Est. +$0.61)`, `Cache: lapsed (next turn Est. +$0.61)`; a lapse under a cent is not priced. */
+function cacheText(c: { readonly leftS: number; readonly lapseUsd: number }): string {
+  const usd = c.lapseUsd >= 0.005 ? money(c.lapseUsd) : null;
+  if (c.leftS <= 0) return `${DIM}Cache:${RESET} ${YELLOW}lapsed${RESET}${usd === null ? "" : ` ${DIM}(next turn Est. +${usd})${RESET}`}`;
+  const left = c.leftS >= 60 ? `${Math.floor(c.leftS / 60)}m` : `${c.leftS}s`;
+  const time = c.leftS < CACHE_WARN_S ? `${YELLOW}${left} left${RESET}` : `${left} left`;
+  return `${DIM}Cache:${RESET} ${time}${usd === null ? "" : ` ${DIM}(lapse Est. +${usd})${RESET}`}`;
+}
 
 /**
  * Pure. The lines for one session; null prints nothing (not behind reflex, or nothing to say yet).
- *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80
+ *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Cache: 42m left (lapse Est. +$0.61)
  *   ↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)
  * One line per running subagent (changed or not), titled as Claude Code shows it (else `subagent N`, by start order).
  */
@@ -80,6 +93,7 @@ export function formatStatus(s: StatusBody | null): string | null {
   const me = s.effort?.main ?? null;
   if (me !== null && moved(me)) parts.push(effortText(me));
   if (s.cost !== undefined && s.cost >= 0.005) parts.push(`${DIM}Est. Cost:${RESET} ${money(s.cost)}`);
+  if (s.cache) parts.push(cacheText(s.cache));
   const subs = (s.subagents ?? []).map((x, i) => {
     const bits = [...(x.model !== null ? [modelText(x.model)] : []), ...(x.effort !== null && moved(x.effort) ? [effortText(x.effort)] : [])];
     const title = cleanTitle(x.title ?? "");

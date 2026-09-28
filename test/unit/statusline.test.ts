@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { cleanTitle, fetchStatus, formatStatus, shortModel } from "../../src/statusline.js";
+import { lastBreakpointTtl } from "../../src/wire/claude-code.js";
 import { parseStatusInput } from "../../src/wire/statusline.js";
 import { SessionStatus } from "../../src/worker/session-status.js";
 import { hasOwnStatusLine, mergeSettings } from "../../src/launcher/settings-inject.js";
@@ -52,8 +53,8 @@ describe("statusline", () => {
     s.observe(d({ turn: "side", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", sentModel: HAIKU }));
     s.observe(d({ kind: "subagent", agentId: "a1", conv: "c-a1", turn: "continuation", sentModel: HAIKU }));
-    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0 });
-    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0 });
+    assert.deepEqual(s.get("s1"), { main: { requested: OPUS, sent: SONNET }, subagents: [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }], effort: { main: null }, cost: 0, cache: null });
+    assert.deepEqual(s.get("other"), { main: null, subagents: [], effort: { main: null }, cost: 0, cache: null });
   });
 
   it("the cost is every record at the model sent", () => {
@@ -107,6 +108,45 @@ describe("statusline", () => {
     obs("a1");
     s.addRecord({ id: "r", at: "2026-09-24T10:00:00.000Z", turn: "continuation", kind: "subagent", conv: "c-a1", requested: { model: OPUS, tier: "opus", effort: "high" }, forwarded: { model: HAIKU, rewritten: true, fallback: false }, effort: { pick: "low", target: "low", via: "message", reasons: [] } } as unknown as DecisionRecord, "s1");
     assert.deepEqual(s.get("s1").subagents, [{ title: null, model: { requested: OPUS, sent: HAIKU }, effort: null }]);
+  });
+
+  it("the cache TTL is the last breakpoint's, in prefix order; no ttl is the 5-minute default", () => {
+    const cc = (ttl?: string) => ({ type: "text", text: "x", cache_control: { type: "ephemeral", ...(ttl ? { ttl } : {}) } });
+    assert.equal(lastBreakpointTtl({ system: [cc("1h")], messages: [{ role: "user", content: [cc()] }] }), "5m");
+    assert.equal(lastBreakpointTtl({ tools: [cc()], system: [cc("1h")], messages: [{ role: "user", content: "plain" }] }), "1h");
+    assert.equal(lastBreakpointTtl({ system: "s", messages: [{ role: "user", content: [{ type: "text", text: "x" }] }] }), null);
+    assert.equal(lastBreakpointTtl({ messages: [{ role: "user", content: [cc("30m")] }] }), null, "a TTL not known here: nothing to count down");
+  });
+
+  it("the main chat's cache: restarted by each answered main-chat request, priced as a rewrite of its whole prefix", () => {
+    const s = new SessionStatus();
+    const t0 = Date.parse("2026-09-28T10:00:00.000Z");
+    const rec = (o: Record<string, unknown>) => ({ id: "r", at: "2026-09-28T10:00:00.000Z", turn: "new", kind: "main", cache_ttl: "1h", requested: { model: OPUS, tier: "opus" }, forwarded: { model: OPUS, rewritten: false, fallback: false }, upstream: { status: 200 }, usage: { input: 10, output: 90_000, cache_read: 900_000, cache_create: 9_990 }, ...o }) as unknown as DecisionRecord;
+    s.addRecord(rec({}), "s1");
+    // Opus 5.5: $4/MTok input; a 1h write is 2x, a read 0.05x: 1M tokens cost $7.80 more written than read.
+    const first = s.get("s1", t0 + 18 * 60_000).cache;
+    assert.deepEqual({ ...first, lapseUsd: Math.round((first?.lapseUsd ?? 0) * 100) / 100 }, { ttl: "1h", leftS: 42 * 60, lapseUsd: 7.8 });
+    s.addRecord(rec({ at: "2026-09-28T10:30:00.000Z", turn: "side" }), "s1"); // side calls do not count
+    s.addRecord(rec({ at: "2026-09-28T10:30:00.000Z", kind: "subagent", cache_ttl: "5m" }), "s1"); // nor subagents
+    s.addRecord(rec({ at: "2026-09-28T10:30:00.000Z", upstream: { status: 529 } }), "s1"); // nor a failed request
+    assert.equal(s.get("s1", t0 + 61 * 60_000).cache?.leftS, -60, "lapsed");
+    s.addRecord(rec({ at: "2026-09-28T10:40:00.000Z", turn: "continuation", cache_ttl: "5m", forwarded: { model: SONNET, rewritten: true, fallback: false }, usage: { input: 0, output: 0, cache_read: 1_000_000, cache_create: 0 } }), "s1");
+    s.addRecord(rec({ at: "2026-09-28T10:20:00.000Z" }), "s1"); // an older request answered late changes nothing
+    const c = s.get("s1", t0 + 41 * 60_000).cache;
+    assert.equal(c?.leftS, 4 * 60);
+    assert.ok(Math.abs((c?.lapseUsd ?? 0) - 2.3) < 1e-9, "Sonnet 5 at 5m: $2 x (1.25 - 0.1) per MTok"); // the model it was sent to
+    assert.equal(s.get("s2").cache, null);
+  });
+
+  it("shows the cache's time left and what a lapse adds; yellow in the last five minutes", () => {
+    const base = { worker: "up" as const, main: { requested: OPUS, sent: OPUS }, subagents: [] };
+    assert.equal(plain(formatStatus({ ...base, cache: { leftS: 42 * 60 + 59, lapseUsd: 0.614 } })), "Reflex: Opus 5.5 · Cache: 42m left (lapse Est. +$0.61)");
+    assert.equal(plain(formatStatus({ ...base, cache: { leftS: 45, lapseUsd: 0.001 } })), "Reflex: Opus 5.5 · Cache: 45s left");
+    assert.equal(plain(formatStatus({ ...base, cache: { leftS: 0, lapseUsd: 0.61 } })), "Reflex: Opus 5.5 · Cache: lapsed (next turn Est. +$0.61)");
+    assert.equal(plain(formatStatus({ ...base, cache: null })), "Reflex: Opus 5.5");
+    const yellow = `${String.fromCharCode(27)}[33m`;
+    assert.ok(formatStatus({ ...base, cache: { leftS: 4 * 60, lapseUsd: 0 } })?.includes(`${yellow}4m left`));
+    assert.ok(!formatStatus({ ...base, cache: { leftS: 6 * 60, lapseUsd: 0 } })?.includes(`${yellow}6m left`));
   });
 
   it("never replaces the user's own status line", () => {

@@ -62,6 +62,15 @@ describe("wire contract: stable facts across a session", () => {
     assert.ok(byLabel("sonnet-agent-run.subagent-").every((v) => v.signals.s2));
   });
 
+  it("the main chat's cache breakpoints are 1-hour ones; a subagent's carry no ttl, the 5-minute default", () => {
+    const views = fixtures.map(viewOf);
+    const main = views.filter((v) => v.kind === "main" && v.turn !== "side");
+    const sub = views.filter((v) => v.kind === "subagent");
+    assert.ok(main.length >= 5 && sub.length >= 5);
+    assert.deepEqual(new Set(main.map((v) => v.facts.cacheTtl)), new Set(["1h"]));
+    assert.deepEqual(new Set(sub.map((v) => v.facts.cacheTtl)), new Set(["5m"]));
+  });
+
   it("side markers are matched on the last message only: a later user turn is not side because of history", () => {
     const later = byLabel("interactive.main-new-turn-plain")[0];
     assert.equal(later?.turn, "new");
