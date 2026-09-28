@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { describe, it } from "node:test";
+import { pathToFileURL } from "node:url";
 import { route } from "../../src/cli.js";
 
 describe("route", () => {
@@ -21,5 +23,18 @@ describe("route", () => {
   it("`--` forces forwarding, even of reserved words", () => {
     assert.deepEqual(route(["--", "doctor"]), { kind: "claude", args: ["doctor"] });
     assert.deepEqual(route(["--"]), { kind: "claude", args: [] });
+  });
+});
+
+describe("exit", () => {
+  it("a large output piped to another process arrives whole before reflex exits, with its exit code", async () => {
+    const cli = pathToFileURL("src/cli.ts").href;
+    const code = `const { exitWhenFlushed } = await import(${JSON.stringify(cli)}); process.stdout.write("x".repeat(200000)); exitWhenFlushed(3);`;
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], { stdio: ["ignore", "pipe", "inherit"] });
+    let bytes = 0;
+    child.stdout.on("data", (c: Buffer) => (bytes += c.length));
+    const exit = await new Promise<number | null>((resolve) => child.on("close", resolve));
+    assert.equal(bytes, 200000, "process.exit right after the write stopped at 65536");
+    assert.equal(exit, 3);
   });
 });

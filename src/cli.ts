@@ -41,13 +41,19 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 }
 
+/**
+ * Exit once everything written so far has left: to a pipe stdout is asynchronous, and `process.exit` right after a
+ * large write drops all but the first 64 KiB (`reflex report | less` lost sections 13-14). An empty write's callback
+ * runs after the writes queued before it. Still an explicit exit, because the launcher may leave handles behind.
+ */
+export function exitWhenFlushed(code: number): void {
+  process.stdout.write("", () => process.stderr.write("", () => process.exit(code)));
+}
+
 // `main` is the only entry point; bin/reflex.js calls it.
 export const run = (): void => {
-  main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
-    (e: unknown) => {
-      process.stderr.write(`reflex: fatal: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);
-      process.exit(1);
-    },
-  );
+  main(process.argv.slice(2)).then(exitWhenFlushed, (e: unknown) => {
+    process.stderr.write(`reflex: fatal: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);
+    exitWhenFlushed(1);
+  });
 };
