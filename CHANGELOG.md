@@ -6,6 +6,27 @@
 
 _Nothing yet._
 
+## 0.7.0 — 2026-09-28
+
+### Added
+
+- **Subscription quota in the status line.** `Quota: 5h 31%, 7d 48%`, as Anthropic reports it on every response
+  (`anthropic-ratelimit-unified-*` headers). When the share rose at least 2% recently (5h: the last hour; 7d: the last
+  day) and that pace reaches 100% before the window resets, roughly when: `5h 62% (limit in ~40m)`; once a window is
+  refused, `(limited, resets in 1h 20m)`. Yellow from 80%. The quota is the account's, so use outside reflex moves it too.
+- **`reflex report` section 15, quota exchange rate:** the tokens (and with `--usd` list-price dollars) the requests
+  between two 1% rises of the 5-hour and weekly share used, by ISO week and by model, so a limit change shows up as a
+  change in what 1% buys. Account-wide: usage outside reflex in the same stretch lowers these figures.
+- The decision record carries `quota` (per window, the used share and its reset time; numbers only, the rest of the
+  response headers are never kept; not in `reflex share`).
+- **Jev is pinned to `jev-1.13.0`** instead of the moving `jev-latest` alias, since the routing thresholds are fitted to
+  one version's answers. `REFLEX_JEV_MODEL` overrides it; `reflex doctor` shows the model in use.
+
+### Changed
+
+- Report section 12 takes the cache TTL from the request's own `cache_ttl`, and the `extended-cache-ttl` beta flag only
+  for records written before that field existed.
+
 ## 0.6.0 — 2026-09-28
 
 ### Added
