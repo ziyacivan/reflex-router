@@ -57,6 +57,13 @@ describe("loadConfig", () => {
     assert.equal(config.models.haiku, "claude-haiku-x");
   });
 
+  it("Jev is asked for a pinned version, not the moving alias; REFLEX_JEV_MODEL overrides it with a Jev id only", () => {
+    assert.equal(load({}).config.jevModel, "jev-1.13.0");
+    assert.equal(load({ REFLEX_JEV_MODEL: "jev-latest" }).config.jevModel, "jev-latest");
+    const bad = loadConfig({ REFLEX_JEV_MODEL: "gpt-5" });
+    assert.ok(!bad.ok && bad.errors.some((e) => e.includes("REFLEX_JEV_MODEL")));
+  });
+
   it("every setting set to an empty string gives the same config as an empty environment", () => {
     assert.deepEqual(load(Object.fromEntries(SETTING_NAMES.map((n) => [n, ""]))), load({}));
     assert.deepEqual(load(Object.fromEntries(SETTING_NAMES.map((n) => [n, " \t"]))), load({}));

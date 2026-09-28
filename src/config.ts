@@ -73,6 +73,8 @@ export interface Config {
   readonly typesafeApiKey: string | undefined;
   /** Jev endpoint origin (REFLEX_JEV_BASE_URL); the path /v1/systemone is appended. */
   readonly jevBaseUrl: string;
+  /** Jev model id each decision asks for (REFLEX_JEV_MODEL; default DEFAULT_JEV_MODEL, a pinned version). */
+  readonly jevModel: string;
   /** Hard deadline for one Jev decision, connection setup included (REFLEX_JEV_DEADLINE_MS). Expiry fails open. */
   readonly jevDeadlineMs: number;
   /** Interval of the decision backend's keep-alive ping; 0 disables it. */
@@ -194,6 +196,12 @@ export type ConfigResult =
 export const DEFAULT_UPSTREAM = "https://api.anthropic.com";
 export const TYPESAFE_KEY_PREFIX = "apikey_";
 export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
+/**
+ * The Jev version every decision asks for. Pinned, not `jev-latest`: the thresholds and the Laya head are fitted to one
+ * version's answers, and the alias moves when TypeSafe ships a release. `jev-latest` was `jev-1.13.0` when this was
+ * pinned (docs.typesafe.ai/models.md, 2026-09-28). REFLEX_JEV_MODEL overrides it (e.g. `jev-latest` to follow the alias).
+ */
+export const DEFAULT_JEV_MODEL = "jev-1.13.0";
 /** Above the first measured cold-connection p95 (1136 ms, docs/observations.md) with some headroom. */
 export const DEFAULT_JEV_DEADLINE_MS = 1500;
 /**
@@ -225,7 +233,7 @@ export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir
  * `reflex doctor` reports the source of each one; only REFLEX_* and TYPESAFE_API_KEY may come from ~/.reflex/env.
  */
 export const SETTING_NAMES: readonly string[] = [
-  "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
+  "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_MODEL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
   "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
@@ -249,6 +257,14 @@ export function unknownReflexEnvNames(env: NodeJS.ProcessEnv): string[] {
 }
 
 const truthy = (v: string | undefined): boolean => v !== undefined && ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+
+/** A Jev model id: `jev-` and then letters, digits, dots or dashes (`jev-1.13.0`, `jev-latest`, `jev-preview`). */
+function parseJevModel(raw: string | undefined, errors: string[]): string {
+  if (raw === undefined) return DEFAULT_JEV_MODEL;
+  if (/^jev-[A-Za-z0-9.-]+$/.test(raw)) return raw;
+  errors.push(`REFLEX_JEV_MODEL must be a Jev model id such as ${DEFAULT_JEV_MODEL} or jev-latest (got ${JSON.stringify(raw.slice(0, 40))})`);
+  return DEFAULT_JEV_MODEL;
+}
 
 function parseEnum<T extends string>(raw: string | undefined, allowed: readonly T[], fallback: T, name: string, errors: string[]): T {
   if (raw === undefined || raw.trim() === "") return fallback;
@@ -361,6 +377,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     ignoreVersionCheck: truthy(setting(env, "REFLEX_IGNORE_VERSION_CHECK")),
     typesafeApiKey,
     jevBaseUrl,
+    jevModel: parseJevModel(setting(env, "REFLEX_JEV_MODEL"), errors),
     jevDeadlineMs: parseBoundedInt(setting(env, "REFLEX_JEV_DEADLINE_MS"), DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),
     warmIntervalMs: parseBoundedInt(setting(env, "REFLEX_WARM_INTERVAL_MS"), DEFAULT_WARM_INTERVAL_MS, 0, 3_600_000, "REFLEX_WARM_INTERVAL_MS", errors),
     layaBin: setting(env, "REFLEX_LAYA_BIN"),

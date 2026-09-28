@@ -4,10 +4,12 @@
 // odd or partial answer is an error, so the caller fails open. Errors never include the response body or the key.
 import http from "node:http";
 import https from "node:https";
+import { DEFAULT_JEV_MODEL } from "../config.js";
 import type { Answer, Decision, DecisionState, QuestionSet } from "../types.js";
 import { BackendError, type DecisionBackend } from "./types.js";
 
-export const JEV_MODEL = "jev-latest";
+/** The model asked for when the caller names none: the pinned version (src/config.ts). */
+export const JEV_MODEL = DEFAULT_JEV_MODEL;
 export const JEV_PATH = "/v1/systemone";
 /** Probabilities must sum to 1 within this tolerance. */
 const SUM_TOLERANCE = 0.02;

@@ -46,7 +46,7 @@ function layaFor(config: Config, calibrate: boolean, deadlineMs = config.layaDea
 function backendFor(config: Config): DecisionBackend | null {
   if (config.backend === "laya") return layaFor(config, config.layaCalibration);
   if (config.typesafeApiKey === undefined) return null;
-  return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, deadlineMs: config.jevDeadlineMs });
+  return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, model: config.jevModel, deadlineMs: config.jevDeadlineMs });
 }
 
 /** REFLEX_COMPARE's deadline for one Laya answer; long prompts with the feature questions take seconds on CPU. */

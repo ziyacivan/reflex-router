@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, SETTING_NAMES, unknownReflexEnvNames } from "./config.js";
+import { DEFAULT_JEV_MODEL, loadConfig, SETTING_NAMES, unknownReflexEnvNames } from "./config.js";
 import { resolveEffectiveMode } from "./effective-mode.js";
 import { HINT_VERSION } from "./delegate/hint.js";
 import { mergeEnvFile, type MergedEnv } from "./env-file.js";
@@ -87,7 +87,11 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
     out(`backend:         laya, started by reflex on 127.0.0.1, offline (model ${c.layaModel}; no TypeSafe key used)`);
     out(`laya-serve:      ${layaBin ? layaBin.path : 'NOT FOUND - install it with `uv tool install "laya[serve]"` or set REFLEX_LAYA_BIN; sessions run plain claude until then'}`);
     out(`laya weights:    ${cached ? `in ${hub}` : `NOT in ${hub} - fetch them once with \`hf download convaiinnovations/laya\` (reflex runs laya-serve offline)`}`);
-  } else out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
+  } else {
+    out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
+    const pinned = c.jevModel === DEFAULT_JEV_MODEL;
+    out(`jev model:       ${c.jevModel} (${pinned ? "pinned; REFLEX_JEV_MODEL=jev-latest follows TypeSafe's alias instead" : `REFLEX_JEV_MODEL; reflex pins ${DEFAULT_JEV_MODEL}`}). The version that answered is recorded per decision (backend_version)`);
+  }
   out(`upstream:        ${new URL(c.upstreamUrl).origin}${new URL(c.upstreamUrl).pathname === "/" ? "" : new URL(c.upstreamUrl).pathname}`);
   out(`state directory: ${c.home}`);
   out(`prompt preview:  ${c.logPrompts ? "on (REFLEX_LOG_PROMPTS) - decisions.jsonl includes a redacted, 300-char preview of each decided prompt" : "off (REFLEX_LOG_PROMPTS=1 to add a redacted prompt preview to decisions.jsonl)"}`);

@@ -49,6 +49,7 @@ describe("JevBackend", () => {
     assert.equal(call.headers.authorization, "Bearer apikey_unit");
     assert.deepEqual(Object.keys(call.body).sort(), ["model", "questions", "state"]);
     assert.equal(call.body.model, JEV_MODEL);
+    assert.equal(JEV_MODEL, "jev-1.13.0", "a pinned version, never the moving jev-latest alias");
     assert.deepEqual(call.body.state, state);
     assert.equal(call.raw.includes("apikey_unit"), false, "the key is never in the body");
     assert.equal(d.backendModel, "jev-test");
