@@ -1,0 +1,102 @@
+[
+ {
+  "id": "explain-total",
+  "prompt": "What does Inventory.total_value return for an inventory holding 3 items at 1.25 each? Answer briefly.",
+  "check": null
+ },
+ {
+  "id": "failing-tests",
+  "prompt": "Run the test suite and tell me which tests fail and why. Do not change any file.",
+  "check": "git diff --quiet"
+ },
+ {
+  "id": "fix-parser",
+  "prompt": "The test test_name_is_trimmed fails. Fix the parser (not the test) so the whole suite passes.",
+  "check": "python3 -m unittest -q"
+ },
+ {
+  "id": "remove-guard",
+  "prompt": "Inventory.remove should raise ValueError when asked to remove more than is in stock, or an unknown item. Implement that and add tests for both cases.",
+  "check": "python3 -m unittest -q tests.test_models && grep -q ValueError inventory/models.py"
+ },
+ {
+  "id": "low-stock",
+  "prompt": "Add a function low_stock(inventory, threshold) to inventory/report.py that returns the names of items with qty below threshold, sorted alphabetically. Add a test for it.",
+  "check": "python3 -c \"from inventory.report import low_stock; from inventory.models import Inventory, Item; i=Inventory(); i.add(Item('b',1,1)); i.add(Item('a',0,1)); i.add(Item('c',9,1)); assert low_stock(i,5)==['a','b']\""
+ },
+ {
+  "id": "rename-qty",
+  "prompt": "Rename the field Item.qty to Item.quantity everywhere in the codebase, tests included.",
+  "check": "! grep -rn '\\bqty\\b' inventory tests cli.py && python3 -m unittest -q tests.test_models"
+ },
+ {
+  "id": "docstrings",
+  "prompt": "Add concise docstrings to every function in inventory/parse.py.",
+  "check": "python3 -c \"import inventory.parse as p; assert all(f.__doc__ for f in (p.parse_line, p.parse_lines, p.load))\""
+ },
+ {
+  "id": "summary-script",
+  "prompt": "Write a script scripts/summary.py that loads data/sample.csv with the inventory package and prints only the total value of the inventory as a number.",
+  "check": "(python3 scripts/summary.py || PYTHONPATH=. python3 scripts/summary.py) | grep -Eq '^(105|105\\.75|105\\.8)\\s*$'"
+ },
+ {
+  "id": "where-csv",
+  "prompt": "Where is CSV export implemented, and which delimiter does it write? Is that consistent with how the parser reads files?",
+  "check": "git diff --quiet"
+ },
+ {
+  "id": "type-hints",
+  "prompt": "Add type hints to all functions in inventory/report.py and inventory/parse.py.",
+  "check": "python3 -c \"import inventory.report as r, inventory.parse as p; assert r.format_report.__annotations__ and p.parse_line.__annotations__\""
+ },
+ {
+  "id": "div-zero",
+  "prompt": "Find any function that can divide by zero and make it safe (return 0.0 for an empty inventory). Add a test.",
+  "check": "python3 -c \"from inventory.models import Inventory; assert Inventory().average_price()==0.0\""
+ },
+ {
+  "id": "cli-json",
+  "prompt": "Add a --json flag to cli.py that prints the inventory as a JSON list of {name, qty, price} objects instead of the text report. Keep the text report as the default.",
+  "check": "python3 cli.py data/sample.csv --json | python3 -c \"import json,sys; d=json.load(sys.stdin); assert len(d)==4\" || python3 cli.py --json data/sample.csv | python3 -c \"import json,sys; d=json.load(sys.stdin); assert len(d)==4\""
+ },
+ {
+  "id": "review-models",
+  "prompt": "Review inventory/models.py and list at most three concrete problems, most important first. No code changes.",
+  "check": "git diff --quiet"
+ },
+ {
+  "id": "empty-report",
+  "prompt": "format_report crashes on an empty inventory. Make it print just the TOTAL line in that case, and add a test.",
+  "check": "python3 -c \"from inventory.report import format_report; from inventory.models import Inventory; assert 'TOTAL' in format_report(Inventory())\""
+ },
+ {
+  "id": "csv-module",
+  "prompt": "Refactor inventory/parse.py to use Python's csv module while keeping behaviour (comments skipped, whitespace trimmed). The whole test suite must pass.",
+  "check": "grep -q 'import csv' inventory/parse.py && python3 -m unittest -q tests.test_parse"
+ },
+ {
+  "id": "loc-count",
+  "prompt": "How many non-empty lines does each .py file under inventory/ have? Give a short table.",
+  "check": "git diff --quiet"
+ },
+ {
+  "id": "restock-vs-add",
+  "prompt": "Explain the difference between Inventory.add and Inventory.restock, and whether restock has a bug.",
+  "check": "git diff --quiet"
+ },
+ {
+  "id": "readme-usage",
+  "prompt": "Update README.md with a Usage section describing how to run cli.py and the tests, and what the CSV format is.",
+  "check": "grep -qi usage README.md"
+ },
+ {
+  "id": "tag-filter-test",
+  "prompt": "Inventory.find_by_tag has no test. Add tests covering a match, no match, and an item with several tags.",
+  "check": "grep -q find_by_tag tests/*.py && python3 -m unittest -q tests.test_models"
+ },
+ {
+  "id": "subagent-coverage",
+  "prompt": "Use a subagent (the Agent tool) to find which public functions and methods have no test at all, then give me the list.",
+  "check": "git diff --quiet"
+ }
+]

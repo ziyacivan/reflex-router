@@ -752,3 +752,41 @@ account does is still unknown.
 two runs hit a `reasoning_extraction` refusal on Sonnet 5.5, Claude Code resent the turn to the requested model, and
 how that resent request meets a reflex pin is not measured. *Open:* that refusal path; Opus 5 ↔ Sonnet 5.5; a fixture
 capture of 2.1.284 (until then report section 1 flags `claude-sonnet-5-5` as an unseen requested model).
+
+## 2026-09-29 — Sonnet 5.5 spends fewer tokens than Opus 5.5 on the same tasks; Sonnet 5 still spends more. The default is Sonnet 5.5
+
+**Question.** The 2026-09-26 token audit stopped Opus → Sonnet routing (`REFLEX_TIERS=haiku,opus` in the maintainer's
+env) because Sonnet 5 thought ~2.7× as much as Opus 5.5, so the move saved nothing. Does that hold for Sonnet 5.5?
+
+**Setup.** `scripts/spike/token-compare/`: a small Python project (`sandbox/`, one deliberate test failure) and 20
+tasks (`tasks.json`: fixes, features with tests, a rename, docstrings, type hints, questions, a review, one subagent
+task), each with a check. Every run is one `claude -p` session through the built reflex in route mode, under the
+user's settings (`opus[1m]`, effort `medium`, no `--model`), with a loopback Jev fixing the tier: `opus55` keeps Opus
+5.5, `sonnet55` / `sonnet5` move every main-chat and subagent request to that model (effort stays `medium`). Arms are
+interleaved per task in the same folder path; tokens and list prices come from reflex's own decision log. Two
+repetitions of `opus55` and `sonnet55`, one of `sonnet5` (compared with the first `opus55` repetition only, since the
+second ran against a warmer cache). Est. $9.91 in all. Results: `test/fixtures/experiments/2.1.284/token-compare.*`;
+`analyze.mjs` gives the ratio of task totals with a 95% bootstrap interval over tasks.
+
+| vs Opus 5.5 kept | Output tokens (thinking incl.) | All tokens | List-price cost | Requests | Checks passed |
+| --- | --- | --- | --- | --- | --- |
+| Sonnet 5.5 (2 reps) | **−19%** [−26, −11] | −6% [−17, +6] | **−25%** [−32, −18] | −4% | 35/38 (Opus 5.5: 36/38) |
+| Sonnet 5 (1 rep) | +25% [+9, +43] | +63% [+42, +83] | −10% [−17, −3] | +59% | 19/19 (Opus 5.5: 18/19) |
+
+Sonnet 5.5 cost less on 18 of 20 tasks; its output was higher on 3. Sonnet 5 took more steps (8 requests against 5)
+and wrote more on 14 of 20. Both `rename-qty` failures on each arm are the check's (it also rejects the `qty`
+parameter names of `remove` and `restock`); the one extra Sonnet 5.5 failure is `type-hints`, rep 2.
+
+**What it means.** The audit's reason not to route to Sonnet was Sonnet 5's extra thinking; Sonnet 5.5 does not have
+it on these tasks, and costs about a quarter less than Opus 5.5 at `medium` for the same work. The Sonnet 5 numbers here
+are milder than the audit's (+150% output), which ran both arms at `high` on one-request jobs. *Conditions:* synthetic
+tasks averaging five requests, one machine, one day; long interactive sessions, where cache reads dominate, are not
+measured; quality is a pass/fail check, not a review. The earlier cost argument also said only a real A/B shows a
+saving: `REFLEX_AB` with section 8 of `reflex report` is still the way to confirm it in real use.
+
+**Refusals.** Separately, a prompt that asked the model to work a puzzle out "carefully in your head" was refused by
+Sonnet 5.5 (`reasoning_extraction`) in 9 of 11 routed runs and by Opus 5.5 alone in 0 of 4. Before the fix of the same
+day the pin sent Claude Code's resend back to Sonnet 5.5 (5 of 7 runs exited 1); after it the resend went to Opus 5.5,
+which then refused it (2 runs) or a later request of the turn (1 run): 3 of 4 sessions still failed. The resend carries
+Claude Code's "stopped by a safety classifier" note. The fix restores Claude Code's own recovery but cannot undo the
+refusal. None of the 100 coding-task runs was refused.

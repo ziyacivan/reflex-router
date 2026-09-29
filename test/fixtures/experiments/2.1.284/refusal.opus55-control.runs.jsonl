@@ -1,0 +1,4 @@
+{"task":"refusal-puzzle","arm":"opus55","rep":1,"exit":0,"secs":12,"check":null,"requests":4,"input":8,"output":429,"cache_read":79044,"cache_create":9763,"usd":0.10252,"models":{"main>claude-opus-5-5":4},"by_kind":{"main":4},"unknown_usage":0}
+{"task":"refusal-puzzle","arm":"opus55","rep":2,"exit":0,"secs":12,"check":null,"requests":4,"input":8,"output":441,"cache_read":88267,"cache_create":549,"usd":0.0309,"models":{"main>claude-opus-5-5":4},"by_kind":{"main":4},"unknown_usage":0}
+{"task":"refusal-puzzle","arm":"opus55","rep":3,"exit":0,"secs":13,"check":null,"requests":4,"input":8,"output":502,"cache_read":88289,"cache_create":591,"usd":0.03246,"models":{"main>claude-opus-5-5":4},"by_kind":{"main":4},"unknown_usage":0}
+{"task":"refusal-puzzle","arm":"opus55","rep":4,"exit":0,"secs":11,"check":null,"requests":4,"input":8,"output":424,"cache_read":88263,"cache_create":546,"usd":0.03053,"models":{"main>claude-opus-5-5":4},"by_kind":{"main":4},"unknown_usage":0}
