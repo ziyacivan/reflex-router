@@ -26,7 +26,8 @@
 // mid-conversation the way Claude Code's own /effort does it, see below) · --probe-effort-apply (does the level take
 // effect? full answers, see below) · --probe-effort-verify (the preserved-thinking check with effort messages; Sonnet's
 // top-level effort; Opus 5 and Fable 5.1 per-message effort; see below). Probes and routed requests carry the product's header rewrite (STRIP_BETAS).
-// Target model ids and prices are the product's own (DEFAULT_MODELS, src/pricing.ts).
+// Target model ids and prices are the product's own (DEFAULT_MODELS, src/pricing.ts); `--model sonnet=claude-sonnet-5-5`
+// probes a model that is not yet its tier's default.
 //
 // The cap is ENFORCED: every probe and every forwarded request is pre-charged from its own bytes (estimateTokens: 2.5 bytes/token,
 // priced as a 1-hour cache write on its model, the worst case) and refused if that would cross the cap; the reservation
@@ -67,6 +68,10 @@ let delayPin = false;
 let interactiveExitS = null;
 let lean = false;
 let probeMessageOc = false;
+/** --interactive in a folder never trusted: its trust dialog defaults to "No, exit", so Down comes before the Enter. */
+let newFolder = false;
+/** --model <tier>=<id>: the target model of a tier instead of DEFAULT_MODELS (a model not yet the tier default). */
+const modelOverrides = {};
 /**
  * Main chat only, no model change. Claude Code's own /effort appends `{role:"system",content:[],output_config:{effort}}`
  * after the new user message and sets the top-level effort too (2.1.281 capture). The live session does the same at its
@@ -96,7 +101,7 @@ const EFFORT_APPLY_MAX_TOKENS = 16000;
  * "drop_block". The session's prompt must make the model think between tool calls, or there is nothing to check.
  */
 let probeEffortVerify = false;
-/** --effort-verify-parts opus-5,fable-5.1,sonnet,binding | binding-set (alone): run only these parts (each Opus 5 / Fable part costs a cache write). */
+/** --effort-verify-parts opus-5,fable-5.1,sonnet-5.5,sonnet,binding | binding-set (alone): run only these parts (each Opus 5 / Fable part costs a cache write). */
 let verifyParts = new Set(["opus-5", "fable-5.1", "sonnet", "binding"]);
 /** Part binding-set only: run the live main chat (and its probes) on this tier instead (e.g. fable: the product's retarget). */
 let bindingTier = null;
@@ -125,11 +130,13 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--probe-effort-verify") probeEffortVerify = true;
   else if (argv[i] === "--effort-verify-parts") verifyParts = new Set(argv[++i].split(","));
   else if (argv[i] === "--binding-tier") bindingTier = argv[++i];
+  else if (argv[i] === "--new-folder") newFolder = true;
+  else if (argv[i] === "--model") { const [t, id] = argv[++i].split("="); modelOverrides[t] = id; }
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
-const MODELS = { ...DEFAULT_MODELS };
+const MODELS = { ...DEFAULT_MODELS, ...modelOverrides };
 const ORDER = ["haiku", "sonnet", "opus", "fable"];
 /** --to, or else the cheaper tiers than the source; cheapest first. */
 const TARGETS = to ?? ORDER.slice(0, ORDER.indexOf(from));
@@ -338,7 +345,7 @@ async function effortVerify(req, raw, headers, parsed, facts, view) {
   if (view.turn !== "continuation") {
     if (vs.prev) return { body: raw, headers, note: "main-new passthrough (effort-verify, later)" };
     vs.prev = raw;
-    for (const [label, make] of [["opus-5", () => variantBody(parsed, (b) => { b.model = "claude-opus-5"; })], ["fable-5.1", () => { const r = rt(raw, "fable"); return r.ok ? r.body : null; }]]) {
+    for (const [label, make] of [["opus-5", () => variantBody(parsed, (b) => { b.model = "claude-opus-5"; })], ["fable-5.1", () => { const r = rt(raw, "fable"); return r.ok ? r.body : null; }], ["sonnet-5.5", () => { const r = rt(raw, "sonnet"); return r.ok ? r.body : null; }]]) {
       if (!verifyParts.has(label)) continue;
       const base = make();
       if (!base) continue;
@@ -346,7 +353,9 @@ async function effortVerify(req, raw, headers, parsed, facts, view) {
       await probe(`${label}: first request (cache write)`, req.url, headers, base, ["model"], f, { keepHeaders: true });
       await probe(`${label}: + effort message low (accepted? cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.messages.push(effortMsg("low")); b.output_config = { ...b.output_config, effort: "low" }; }), ["model", "messages.effort_added"], f, { keepHeaders: true });
       await probe(`${label}: + effort message low, top-level unchanged (cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.messages.push(effortMsg("low")); }), ["model", "messages.effort_added"], f, { keepHeaders: true });
-      for (const [v, mut] of [[`client effort (${pb.output_config?.effort})`, () => {}], ["message only low", (b) => { b.messages.push(effortMsg("low")); }], ["message only max", (b) => { b.messages.push(effortMsg("max")); }]]) {
+      if (label === "sonnet-5.5") await probe(`${label}: top-level low only, no message (cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.output_config = { ...b.output_config, effort: "low" }; }), ["model", "output_config.effort"], f, { keepHeaders: true });
+      const topOnly = label === "sonnet-5.5" ? [["top-level only low", (b) => { b.output_config = { ...b.output_config, effort: "low" }; }], ["top-level only max", (b) => { b.output_config = { ...b.output_config, effort: "max" }; }]] : [];
+      for (const [v, mut] of [[`client effort (${pb.output_config?.effort})`, () => {}], ["message only low", (b) => { b.messages.push(effortMsg("low")); }], ["message only max", (b) => { b.messages.push(effortMsg("max")); }], ...topOnly]) {
         await probe(`${label}: puzzle, ${v}`, req.url, headers, variantBody(pb, (b) => { b.max_tokens = EFFORT_APPLY_MAX_TOKENS; withPuzzle(b); mut(b); }), ["model", "puzzle"], f, { keepHeaders: true, full: true });
       }
     }
@@ -363,15 +372,15 @@ async function effortVerify(req, raw, headers, parsed, facts, view) {
   if (!verifyParts.has("binding")) return { body: raw, headers, note: "passthrough (binding part off)" };
   if (vs.n === 1) {
     const added = structuredClone(parsed); added.messages.push(effortMsg("low")); added.output_config = { ...added.output_config, effort: "low" };
-    const e = bound(headers, structuredClone(added), "error");
+    const e = onTierBound(headers, structuredClone(added), "error");
     await probe("binding error: effort message added at the end", req.url, e.headers, e.body, ["messages.effort_added", "block_binding"], f, { keepHeaders: true });
     vs.inserts.push({ index: parsed.messages.length, effort: "low" });
   } else if (vs.n === 2) {
-    const re = bound(headers, withInsertsOf(parsed, vs.inserts), "error");
+    const re = onTierBound(headers, withInsertsOf(parsed, vs.inserts), "error");
     await probe("binding error: effort message re-inserted (what reflex sends)", req.url, re.headers, re.body, ["messages.effort_reinserted", "block_binding"], f, { keepHeaders: true });
-    const fe = bound(headers, structuredClone(parsed), "error");
+    const fe = onTierBound(headers, structuredClone(parsed), "error");
     await probe("binding error: effort message forgotten (continued without reflex)", req.url, fe.headers, fe.body, ["block_binding"], f, { keepHeaders: true });
-    const fd = bound(headers, structuredClone(parsed), "drop_block");
+    const fd = onTierBound(headers, structuredClone(parsed), "drop_block");
     await probe("binding drop_block: effort message forgotten", req.url, fd.headers, fd.body, ["block_binding"], f, { keepHeaders: true });
     // Positive control: a real edit before the thinking block (one character added to the first tool result). If the
     // check is on, this must be a 400; if it is not, "forgotten" above proves nothing.
@@ -381,21 +390,21 @@ async function effortVerify(req, raw, headers, parsed, facts, view) {
     if (block) {
       if (typeof block.content === "string") block.content += " ";
       else if (Array.isArray(block.content)) { const t = block.content.find((c) => c.type === "text"); if (t) t.text += " "; }
-      const pe = bound(headers, withInsertsOf(edited, vs.inserts), "error");
+      const pe = onTierBound(headers, withInsertsOf(edited, vs.inserts), "error");
       await probe("binding error: POSITIVE CONTROL, first tool result edited (effort message kept)", req.url, pe.headers, pe.body, ["tool_result edited", "block_binding"], f, { keepHeaders: true });
-      const pd = bound(headers, withInsertsOf(edited, vs.inserts), "drop_block");
+      const pd = onTierBound(headers, withInsertsOf(edited, vs.inserts), "drop_block");
       await probe("binding drop_block: POSITIVE CONTROL, first tool result edited", req.url, pd.headers, pd.body, ["tool_result edited", "block_binding"], f, { keepHeaders: true });
     }
     const fn = structuredClone(parsed);
-    await probe("no binding controls: effort message forgotten (this account's default)", req.url, headers, Buffer.from(JSON.stringify(fn)), [], f, { keepHeaders: true });
+    await probe("no binding controls: effort message forgotten (this account's default)", req.url, headers, onTier(fn), [], f, { keepHeaders: true });
   }
-  return { body: Buffer.from(JSON.stringify(withInsertsOf(parsed, vs.inserts))), headers, note: `main effort-verify #${vs.n}`, fields: ["messages.+effort"], facts: { ...f, history_thinking_blocks: facts.history_thinking_blocks } };
+  return { body: onTier(withInsertsOf(parsed, vs.inserts)), headers, note: `main effort-verify #${vs.n}`, fields: ["messages.+effort"], facts: { ...f, history_thinking_blocks: facts.history_thinking_blocks } };
 }
 /**
  * Part `binding-set`: the first request's own trailing system message gets the new level (what src/wire/effort.ts does
  * as op "set"), the model thinks after it, and at the next request the check is run with it re-applied and forgotten.
  */
-const bs = { index: null, n: 0 };
+const bs = { index: null, n: 0, probed: false };
 const setLevel = (b) => { const m = b.messages[bs.index]; m.output_config = { ...m.output_config, effort: "low" }; if (!bindingTier) b.output_config = { ...b.output_config, effort: "low" }; return b; };
 /** The live body on --binding-tier (the product's retarget), else as is. */
 const onTier = (obj) => { const buf = Buffer.from(JSON.stringify(obj)); if (!bindingTier) return buf; const r = rt(buf, bindingTier); if (!r.ok) throw new Error(`retarget: ${r.reason}`); return r.body; };
@@ -410,13 +419,26 @@ async function bindingSet(req, raw, headers, parsed, f, view) {
   }
   if (bs.index === null) return { body: raw, headers, note: "passthrough" };
   bs.n++;
-  if (bs.n === 1) {
+  // At the first continuation whose history holds a thinking block made after the level was set (none: nothing to check).
+  if (!bs.probed && f.history_thinking_blocks > 0) {
+    bs.probed = true;
     const re = onTierBound(headers, setLevel(structuredClone(parsed)), "error");
     await probe("binding-set error: level re-applied in place (what reflex sends)", req.url, re.headers, re.body, ["messages.effort_set", "block_binding"], { ...f, history_thinking_blocks: f.history_thinking_blocks }, { keepHeaders: true });
     const fe = onTierBound(headers, structuredClone(parsed), "error");
     await probe("binding-set error: level forgotten (continued without reflex)", req.url, fe.headers, fe.body, ["block_binding"], f, { keepHeaders: true });
     const fd = onTierBound(headers, structuredClone(parsed), "drop_block");
     await probe("binding-set drop_block: level forgotten", req.url, fd.headers, fd.body, ["block_binding"], f, { keepHeaders: true });
+    // Positive control: the last tool result (before the newest thinking block) edited, level kept. With the check on this is a 400.
+    const edited = setLevel(structuredClone(parsed));
+    const tr = [...edited.messages].reverse().find((m) => m.role === "user" && Array.isArray(m.content) && m.content.some((c) => c.type === "tool_result"));
+    const trs = edited.messages.filter((m) => m.role === "user" && Array.isArray(m.content) && m.content.some((c) => c.type === "tool_result"));
+    const block = (trs.at(-2) ?? tr)?.content.find((c) => c.type === "tool_result");
+    if (block) {
+      if (typeof block.content === "string") block.content += " ";
+      else if (Array.isArray(block.content)) { const t = block.content.find((c) => c.type === "text"); if (t) t.text += " "; }
+      const pe = onTierBound(headers, edited, "error");
+      await probe("binding-set error: POSITIVE CONTROL, a tool result before the thinking block edited", req.url, pe.headers, pe.body, ["tool_result edited", "block_binding"], f, { keepHeaders: true });
+    }
   }
   return { body: onTier(setLevel(structuredClone(parsed))), headers, note: `main binding-set #${bs.n}`, fields: ["messages.effort_set"], facts: f };
 }
@@ -587,13 +609,15 @@ const server = http.createServer((req, res) => {
         res.end();
         if (!req.url.startsWith("/v1/messages")) return;
         let usage = null;
-        for (const m of text.matchAll(/data: (\{"type":"message_(?:start|delta)".*)\n/g)) { try { const o = JSON.parse(m[1]); usage = { ...usage, ...(o.message?.usage ?? o.usage) }; } catch { /* partial */ } }
+        let stop = null;
+        for (const m of text.matchAll(/data: (\{"type":"message_(?:start|delta)".*)\n/g)) { try { const o = JSON.parse(m[1]); usage = { ...usage, ...(o.message?.usage ?? o.usage) }; if (o.delta?.stop_reason) stop = { reason: o.delta.stop_reason, category: o.delta.stop_details?.category ?? null }; } catch { /* partial */ } }
+        const streamError = /event: error\ndata: (.*)\n/.exec(text)?.[1]?.slice(0, 200) ?? null;
         let model = null; try { model = JSON.parse(plan.body.toString("utf8")).model ?? null; } catch { /* not json */ }
         let error = null; if (ur.statusCode >= 400) { try { error = JSON.parse(text).error.message; } catch { error = text.slice(0, 200); } }
         const usd = costUsd(model, usage);
         spent += usd - pre;
-        forwarded.push({ note: plan.note, model, status: ur.statusCode, error, fields: plan.fields ?? [], facts: plan.facts ?? null, usage, est_usd: Number(usd.toFixed(5)) });
-        log(`forward ${ur.statusCode} ${plan.note} -> ${model}${error ? " :: " + error : ""}  (spent ~$${spent.toFixed(3)})`);
+        forwarded.push({ note: plan.note, model, status: ur.statusCode, error, stop, stream_error: streamError, fields: plan.fields ?? [], facts: plan.facts ?? null, usage, est_usd: Number(usd.toFixed(5)) });
+        log(`forward ${ur.statusCode} ${plan.note} -> ${model}${error ? " :: " + error : ""}${stop ? ` [${stop.reason}${stop.category ? "/" + stop.category : ""}]` : ""}${streamError ? " STREAM ERROR " + streamError : ""}  (spent ~$${spent.toFixed(3)})`);
       });
     });
     up.on("error", (e) => { if (!res.headersSent) res.writeHead(502); res.end(String(e.message)); });
@@ -612,14 +636,14 @@ server.listen(0, "127.0.0.1", () => {
     const i = claudeArgs.indexOf("-p");
     const prompt = claudeArgs[i + 1];
     const rest = claudeArgs.filter((_, k) => k !== i && k !== i + 1);
-    const keys = ["5", "\\r", "10", prompt, "12", "\\r", String(interactiveExitS), "/exit", String(interactiveExitS + 3), "\\r"];
+    const keys = [...(newFolder ? ["4", "\\x1b[B"] : []), "5", "\\r", "10", prompt, "12", "\\r", String(interactiveExitS), "/exit", String(interactiveExitS + 3), "\\r"];
     child = spawn("python3", [join(import.meta.dirname, "pty-run.py"), ...keys, "--", "claude", ...rest], { cwd, stdio: ["ignore", "ignore", "inherit"], env });
   }
   child.on("exit", (code) => {
     server.close();
     let modelSetting = null;
     try { modelSetting = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8")).model ?? null; } catch { /* none */ }
-    const settings = { model_setting: modelSetting, claude_args: claudeArgs.map((a, i) => (claudeArgs[i - 1] === "-p" ? "<prompt>" : a)), requested_models: [...seen.requested_models], entrypoints: [...seen.entrypoints], betas_seen: [...seen.betas].sort() };
+    const settings = { model_setting: modelSetting, target_models: MODELS, claude_args: claudeArgs.map((a, i) => (claudeArgs[i - 1] === "-p" ? "<prompt>" : a)), requested_models: [...seen.requested_models], entrypoints: [...seen.entrypoints], betas_seen: [...seen.betas].sort() };
     writeFileSync(join(out, "results.json"), JSON.stringify({ from, targets: TARGETS, settings, cap_usd: capUsd, est_total_usd: Number(spent.toFixed(4)), refused_for_cap: refused, claude_exit: code, probes, forwarded }, null, 1));
     log(`claude exited ${code}; estimated spend $${spent.toFixed(3)}; results in ${out}/results.json`);
     process.exit(0);

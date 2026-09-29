@@ -735,3 +735,20 @@ constant baseline.
 no better than "always Sonnet" gains nothing from being fast. Jev is the teacher here, not ground truth, but no
 outcome labels exist to say Julia is right where Jev differs. *Condition:* synthetic English tasks, one machine, a
 thin adapter written by us (a different prompt format might do better; three wordings did not).
+
+## 2026-09-29 — Sonnet 5.5: every pair with Haiku, Opus 5.5 and Fable accepted; effort by message; the default stays Sonnet 5
+
+**What was tried.** Claude Code 2.1.284 sends `claude-sonnet-5-5` for the `sonnet` alias. Twelve paid runs (est. $3.55,
+cap $15) under the user's own settings, no `--model`: Sonnet 5.5 as a retarget target and as a native subagent, `-p`
+and interactive, then effort and the preserved-thinking check (details and table: `docs/wire-format.md` §5.12).
+
+**Result.** Every rewritten request was accepted: to and from Haiku, Opus 5.5 and Fable 5.1, with each side's signed
+thinking in the history, pinned loops, and un-pins. Sonnet 5.5 takes a system message's per-turn effort (Sonnet 5 did
+not); the message changes the level and keeps the cache, the top-level value does neither. This account does not run
+the history-editing check on Sonnet 5.5 (a deliberate edit before a thinking block was accepted), so what an enforced
+account does is still unknown.
+
+**What it means.** The pairs are applied (`VERIFIED_MODEL_RETARGETS`). The sonnet tier default stays `claude-sonnet-5`:
+two runs hit a `reasoning_extraction` refusal on Sonnet 5.5, Claude Code resent the turn to the requested model, and
+how that resent request meets a reflex pin is not measured. *Open:* that refusal path; Opus 5 ↔ Sonnet 5.5; a fixture
+capture of 2.1.284 (until then report section 1 flags `claude-sonnet-5-5` as an unseen requested model).
