@@ -1,11 +1,11 @@
 // Effort on the wire (docs/wire-format.md §5.8). Claude Code's own /effort appends an effort-only system message after
 // the new user message and sets the top-level effort too. The message is what changes the level (on Opus 5.5 the
 // top-level value alone does nothing while the index-1 system message carries the client's effort), and it keeps the
-// cache; a top-level change keeps it on Opus 5.5 only (Opus 5 and Fable 5.1 rewrite the messages cache). reflex adds
+// cache; a top-level change keeps it on Opus 5.5 only (Opus 5, Fable 5.1 and Sonnet 5.5 rewrite the messages cache). reflex adds
 // the same message. Claude Code never sends back what reflex added, so every later request of the conversation must
 // carry the added messages again, at the same place, or the history the model saw is edited (on Opus 5.5 and Fable
 // the later thinking blocks are then bound to a different conversation): `withEffort` re-inserts them by the hash of
-// the history before them. Sonnet takes no per-message effort and loses its whole cache on a top-level change, so
+// the history before them. Sonnet 5 takes no per-message effort and loses its whole cache on a top-level change, so
 // there the level is only set where the cache is being written anyway. Pure.
 import crypto from "node:crypto";
 import { tierOfModel } from "../tiers.js";
@@ -17,28 +17,25 @@ export const isEffort = (v: unknown): v is Effort => typeof v === "string" && (E
 /**
  * Models whose requests take an added effort message, and whether the top-level value follows it (2.1.281,
  * experiment.effort-switch / effort-apply / effort-verify): Opus 5.5 keeps its cache either way and gets both, as
- * Claude Code sends them; Opus 5 and Fable 5.1 get the message only, which keeps the cache and changes the level.
+ * Claude Code sends them; Opus 5, Fable 5.1 and Sonnet 5.5 get the message only, which keeps the cache and changes
+ * the level.
  */
 const MESSAGE_EFFORT: readonly { readonly match: RegExp; readonly top: boolean }[] = [
   { match: /claude-opus-5-5/, top: true },
   { match: /claude-opus-5(?!-\d)/, top: false },
   { match: /claude-fable-5-1/, top: false },
+  // 2.1.284, experiment.effort-verify-sonnet55: the message changes the level with the cache kept; the top-level value
+  // alone does not change it, and changing it rewrites the messages cache (docs/wire-format.md §5.12).
+  { match: /claude-sonnet-5-5/, top: false },
 ];
-/**
- * Models whose effort reflex leaves alone until measured: Sonnet 5.5 takes a per-message effort (beta) where Sonnet 5
- * rejected one, so the top-level value may not be the level in effect, and no capture shows what Claude Code sends it.
- */
-const UNMEASURED_EFFORT: readonly string[] = ["claude-sonnet-5-5"];
-const unmeasured = (model: string | null): boolean => model !== null && UNMEASURED_EFFORT.some((u) => model.toLowerCase().includes(u));
 export const messageEffort = (model: string | null): { readonly top: boolean } | null => (model === null ? null : (MESSAGE_EFFORT.find((m) => m.match.test(model.toLowerCase())) ?? null));
 
 /**
- * How reflex may change the level of a request to `model` this turn: by message (Opus 5.5, Opus 5, Fable 5.1: any
- * request), by the top-level value (Sonnet 5, only when its cache is being written anyway: `cacheFresh`), or not at all
- * (Haiku takes no effort; UNMEASURED_EFFORT).
+ * How reflex may change the level of a request to `model` this turn: by message (Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5:
+ * any request), by the top-level value (Sonnet 5, only when its cache is being written anyway: `cacheFresh`), or not at all
+ * (Haiku takes no effort).
  */
 export function effortVia(model: string | null, cacheFresh: boolean): "message" | "top-level" | null {
-  if (unmeasured(model)) return null;
   if (messageEffort(model)) return "message";
   if (cacheFresh && tierOfModel(model) === "sonnet") return "top-level";
   return null;

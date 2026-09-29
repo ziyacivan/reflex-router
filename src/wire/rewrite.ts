@@ -20,6 +20,11 @@ const ACCEPTS_EFFORT: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: 
  */
 const ACCEPTS_MESSAGE_OUTPUT_CONFIG: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: false, opus: true, fable: true };
 /**
+ * Models that take it although their family's row says no: Sonnet 5.5 accepted an Opus 5.5 first request with its
+ * system message's `output_config` kept (2.1.284 experiment.route-opus55-to-sonnet55, 200).
+ */
+const MESSAGE_OUTPUT_CONFIG_MODELS: readonly string[] = ["claude-sonnet-5-5"];
+/**
  * Families that take MCP tool search's `tool_addition` blocks (2.1.282, beta mid-conversation-tool-changes). Opus 5.5
  * and Fable 5.1 get them from Claude Code natively (captures toolsearch-2.1.282, toolsearch-fable-native: 200). Sonnet 5
  * rejects them: "tool_addition/tool_removal is not supported on this model" (route opus->sonnet, 2026-09-25); Haiku 4.5
@@ -47,12 +52,15 @@ const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>s
 const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5"];
 /**
  * Pairs with such a model verified since, written with the model id in place of its tier (docs/wire-format.md §5.7,
- * test/fixtures/experiments/2.1.280/experiment.route-*opus55*): first request, subagent pin, a continuation holding
- * source-signed thinking, and un-pin with target-signed thinking back to the source.
+ * §5.12, test/fixtures/experiments/2.1.280/experiment.route-*opus55*, 2.1.284/experiment.route-*sonnet55*): first
+ * request, subagent pin, a continuation holding source-signed thinking, and un-pin with target-signed thinking back to
+ * the source. `sonnet` here is Sonnet 5, `opus` Opus 5 and older: Opus 5 <-> Sonnet 5.5 was not run.
  */
 const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set([
   "claude-opus-5-5>haiku", "claude-opus-5-5>sonnet", "haiku>claude-opus-5-5", "sonnet>claude-opus-5-5",
   "claude-opus-5-5>fable", "fable>claude-opus-5-5",
+  "claude-opus-5-5>claude-sonnet-5-5", "claude-sonnet-5-5>claude-opus-5-5",
+  "claude-sonnet-5-5>haiku", "haiku>claude-sonnet-5-5", "claude-sonnet-5-5>fable", "fable>claude-sonnet-5-5",
 ]);
 const unverifiedKey = (m: string | null): string | undefined => UNVERIFIED_MODELS.find((u) => m !== null && m.toLowerCase().includes(u));
 export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean => {
@@ -246,7 +254,8 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
     messages = r.messages;
     fields.push(`messages.system_folded:${r.folded}`);
   }
-  if (!ACCEPTS_MESSAGE_OUTPUT_CONFIG[opts.to] && messages.some((m) => m["role"] === "system" && isObj(m["output_config"]) && "effort" in m["output_config"])) {
+  const keepsMessageOutputConfig = ACCEPTS_MESSAGE_OUTPUT_CONFIG[opts.to] || matches(MESSAGE_OUTPUT_CONFIG_MODELS, opts.model);
+  if (!keepsMessageOutputConfig && messages.some((m) => m["role"] === "system" && isObj(m["output_config"]) && "effort" in m["output_config"])) {
     // Only the per-turn effort goes (the key the target rejects); any other key stays, and the object goes only when
     // effort was all it held (every observed request so far).
     let dropped = 0;

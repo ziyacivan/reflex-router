@@ -281,6 +281,16 @@ describe("retarget: shapes a target rejects and no rewrite can keep", () => {
     for (const type of ["auto", "none"]) assert.ok(to("claude-opus-5-5", "opus", { tool_choice: { type } }).ok);
   });
 
+  it("a system message's per-turn effort stays for Sonnet 5.5 and goes for Sonnet 5", () => {
+    const b = body({ messages: [{ role: "user", content: "hi" }, { role: "system", content: [{ type: "text", text: "S" }], output_config: { effort: "low" } }] });
+    const s55 = retarget(b, { from: "opus", to: "sonnet", model: "claude-sonnet-5-5" });
+    assert.ok(s55.ok);
+    assert.deepEqual(((JSON.parse(s55.body.toString()) as Json)["messages"] as Json[])[1]?.["output_config"], { effort: "low" });
+    assert.ok(!s55.fields.some((f) => f.startsWith("messages.output_config")));
+    const s5 = retarget(b, { from: "opus", to: "sonnet", model: "claude-sonnet-5" });
+    assert.ok(s5.ok && s5.fields.includes("messages.output_config_dropped:1"));
+  });
+
   it("thinking enabled with a budget still becomes adaptive for Opus 5.5 (the rewrite that keeps its meaning)", () => {
     const r = to("claude-opus-5-5", "opus", { thinking: { type: "enabled", budget_tokens: 8000 } });
     assert.ok(r.ok);

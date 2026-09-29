@@ -106,13 +106,15 @@ describe("verified retargets", () => {
     assert.equal(isVerifiedRetarget("opus", "opus", "claude-opus-5-5", "claude-opus-5-5"), false);
   });
 
-  it("no Sonnet 5.5 pair is verified yet, on either side", () => {
+  it("Sonnet 5.5 to and from Haiku, Opus 5.5 and Fable is verified; to and from Opus 5 it is not", () => {
     for (const s55 of ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]"]) {
-      for (const [t, m] of [["haiku", M.haiku], ["opus", M.opus], ["opus", "claude-opus-5-5"], ["fable", M.fable]] as const) {
-        assert.equal(isVerifiedRetarget("sonnet", t, s55, m), false, `${s55} > ${m}`);
-        assert.equal(isVerifiedRetarget(t, "sonnet", m, s55), false, `${m} > ${s55}`);
+      for (const [t, m] of [["haiku", M.haiku], ["opus", "claude-opus-5-5"], ["opus", "claude-opus-5-5[1m]"], ["fable", M.fable]] as const) {
+        assert.equal(isVerifiedRetarget("sonnet", t, s55, m), true, `${s55} > ${m}`);
+        assert.equal(isVerifiedRetarget(t, "sonnet", m, s55), true, `${m} > ${s55}`);
       }
+      assert.equal(isVerifiedRetarget("sonnet", "opus", s55, M.opus), false, "Opus 5 <-> Sonnet 5.5 was not run");
+      assert.equal(isVerifiedRetarget("opus", "sonnet", M.opus, s55), false);
+      assert.equal(isVerifiedRetarget("sonnet", "sonnet", M.sonnet, s55), false, "same tier: never a retarget");
     }
-    assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5", M.sonnet), true, "Sonnet 5 is not Sonnet 5.5");
   });
 });

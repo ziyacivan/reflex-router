@@ -128,7 +128,7 @@ describe("effort on the wire", () => {
     assert.equal(withEffort(buf(withOwn), () => undefined, "max")!.added, null);
   });
 
-  it("by message on Opus 5.5 (with the top-level value), Opus 5 and Fable 5.1 (message only); Sonnet top-level; Haiku none", () => {
+  it("by message on Opus 5.5 (with the top-level value), Opus 5, Fable 5.1 and Sonnet 5.5 (message only); Sonnet 5 top-level; Haiku none", () => {
     for (const m of ["claude-opus-5-5", "claude-opus-5-5[1m]", "claude-opus-5", "claude-opus-5[1m]", "claude-fable-5-1"]) assert.equal(effortVia(m, false), "message", m);
     assert.equal(messageEffort("claude-opus-5-5")?.top, true);
     assert.equal(messageEffort("claude-opus-5")?.top, false, "a top-level change rewrites Opus 5's messages cache");
@@ -136,7 +136,10 @@ describe("effort on the wire", () => {
     assert.equal(effortVia("claude-sonnet-5", true), "top-level");
     assert.equal(effortVia("claude-sonnet-5", false), null, "a top-level change rewrites Sonnet's whole cache");
     assert.equal(effortVia("claude-haiku-4-5-20251001", true), null);
-    for (const m of ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]"]) assert.equal(effortVia(m, true), null, `${m}: unmeasured, left alone`);
+    for (const m of ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]"]) {
+      assert.equal(effortVia(m, false), "message", m);
+      assert.equal(messageEffort(m)?.top, false, "a top-level change rewrites Sonnet 5.5's messages cache");
+    }
     const noTop = withEffort(buf(next), () => undefined, "low", false)!;
     assert.equal(shape(noTop.body), "u s:high a u s:low");
     assert.equal(top(noTop.body), "high", "message only: the top-level value is left alone");

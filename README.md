@@ -243,7 +243,7 @@ than in a footnote.
   evidence about when it should fire. It can only ever raise a tier, never above the one your client asked for, so its
   worst case is a session on the model you already chose. Its correction rules are English and Turkish only.
 - **`REFLEX_EFFORT` is new and its quality effect is unmeasured.** Off by default. It changes a turn's effort level
-  (`low`…`max`) the way Claude Code's own `/effort` does, on Opus 5.5, Opus 5, Fable 5.1 and Sonnet 5; the API accepted
+  (`low`…`max`) the way Claude Code's own `/effort` does, on Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5 and Sonnet 5; the API accepted
   every level and the thinking it caused moved with the level (single measured runs, [wire format §5.8](docs/wire-format.md#58-changing-effort-mid-conversation-same-model-2181)).
   Whether lower levels keep quality is not known yet: `REFLEX_EFFORT_AB` and report section 14 exist to measure it, and
   with `REFLEX_ESCALATE=1` a turn after a correction, failing test or revert runs at your own level again. By default it
