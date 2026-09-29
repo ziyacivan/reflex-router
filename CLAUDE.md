@@ -17,6 +17,7 @@ node bin/reflex.js share [--since 7d] [--out f.jsonl]      # structural-only log
 node scripts/report/strip-archive.mjs <in> <out>   # structural copy of an archived log (allow-listed fields) for test/fixtures/report/archives/
 node scripts/acceptance/check-archives.mjs # Phase 1 acceptance checks over ~/.reflex/archive/*.jsonl (docs/acceptance-phase1.md)
 node --import tsx scripts/calibrate/harvest-corpus.ts <tasks.jsonl> <out.jsonl>   # Jev + every Laya checkpoint over a task corpus; writes numbers only
+node --import tsx scripts/calibrate/tier-ab.ts <corpus.jsonl> <out.jsonl>          # where the tier question sends a labelled corpus under this checkout's policy text; numbers only
 node --import tsx scripts/calibrate/fit.ts [--model m] [--write] <files...>         # fit/cross-validate the Laya head from harvests and REFLEX_COMPARE logs; --write updates src/backend/laya-calibration.generated.ts
 ```
 

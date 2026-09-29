@@ -790,3 +790,40 @@ day the pin sent Claude Code's resend back to Sonnet 5.5 (5 of 7 runs exited 1);
 which then refused it (2 runs) or a later request of the turn (1 run): 3 of 4 sessions still failed. The resend carries
 Claude Code's "stopped by a safety classifier" note. The fix restores Claude Code's own recovery but cannot undo the
 refusal. None of the 100 coding-task runs was refused.
+
+## 2026-09-29 — Sonnet 5.5 against Opus 5.5 on 54 real tasks: equal correctness except bug fixes; the tier text now says so
+
+**Setup.** 54 merged pull requests of one user, from two repositories (30 from a private Python agent-orchestration
+repo, 24 from a public TypeScript OAuth/OIDC server). Each was replayed from its base commit, the PR's title and
+description as the task, by Claude Code 2.1.284 `-p` with `--model claude-sonnet-5-5` and again with
+`--model claude-opus-5-5`, both at `--effort xhigh`, same sandbox, no user hooks or MCP servers, not through reflex. A
+third model (Fable 5.1) judged each pair blind, twice with the order swapped: "did it do the task" (yes / partial / no)
+and "which would you rather merge". A preference counts only when both orders agree. Categories (bug fix, feature,
+difficulty, cross-module) were assigned blind, from the task and the reference diff only. One run per task and model.
+
+**Models.** Correctness was the same overall: mean score (yes 1, partial 0.5, no 0) Sonnet 5.5 0.949, Opus 5.5 0.958,
+difference −0.009 (bootstrap 95% interval −0.042 to +0.023); solved in both orders 46 and 48 of 54. The judge still
+preferred to merge Opus 5.5's result 27 times, Sonnet 5.5's 8 times, 19 ties (sign test p = 0.002): more complete,
+tighter scope. By kind: **bug fixes** (n = 23) went to Opus 5.5, 0.935 vs 0.978, interval −0.087 to −0.011;
+**features** (n = 26) 0.952 vs 0.933 and **cross-module changes** (n = 26) 0.942 vs 0.923, no difference; the OAuth
+server's tasks 0.990 vs 0.990. Median time 253 s vs 388 s; list-price estimate over recorded usage $83 vs $155.
+*Condition:* one user's work, mostly terse task texts (52 of 54 judged underspecified), no repeats.
+
+**Routing.** The same 54 texts, built into the decision state as subagent tasks asking for Opus 5.5, were put to Jev
+(`jev-1.13.0`) with the tier question as it was, and with the new sonnet/opus texts (`scripts/calibrate/tier-ab.ts`,
+numbers only; each text run twice). The label is whether Sonnet 5.5 scored at least as well as Opus 5.5 (49 of 54).
+
+| Text, `REFLEX_MASS_EPS` | sent to Sonnet | of the 49 it could do | of the 5 it could not | of the 23 bug fixes |
+| --- | --- | --- | --- | --- |
+| before, 0.1 (default) | 18, 19 | 16, 16 | 2, 3 | 5, 7 |
+| after, 0.1 (default) | 20, 20 | 18, 18 | 2, 2 | 4, 4 |
+| before, 0.25 | 36, 35 | 31, 30 | 5, 5 | 16, 15 |
+| after, 0.25 | 32, 30 | 30, 28 | 2, 2 | 8, 7 |
+
+The 0.25 rows apply the mass rule and the `reasoning_demand` veto to the recorded answers (at 0.1 this
+reproduces the product's plan exactly). Every Sonnet-capable task that stayed on Opus did so as `same_tier`: Jev gave Sonnet most of the mass and Opus
+0.11–0.56, above the mass rule's 0.1. Raising the threshold with the old text moves the wrong tasks too (all five, and
+most bug fixes); with the new text the probability Jev leaves on Opus follows the bug fixes, so a higher threshold
+moves the tasks Sonnet 5.5 did as well and keeps the others. At the default threshold the change is small (+2).
+*Condition:* the new text was written after seeing these results and measured on the same 54 tasks (no held-out
+set); Jev answers vary a little between runs (both runs shown). The default threshold is left as it is.
