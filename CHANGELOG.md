@@ -6,6 +6,38 @@
 
 _Nothing yet._
 
+## 0.8.0 — 2026-09-29
+
+### Added
+
+- **Claude Sonnet 5.5.** Claude Code 2.1.284 sends `claude-sonnet-5-5` for its own `sonnet`, and it is now the sonnet
+  tier default (`REFLEX_MODEL_SONNET` still overrides it). Every pair with it was run against the API: Sonnet 5.5 to and
+  from Haiku, Opus 5.5, Opus 5 and Fable 5.1, with each side's signed thinking in the history, pinned loops and un-pins,
+  `-p` and interactive ([wire format §5.12](docs/wire-format.md#512-sonnet-55-experiment-21284)). Priced at $2 / $10,
+  cache reads $0.20 per MTok.
+- A retarget to Sonnet 5.5 keeps a system message's per-turn effort (Sonnet 5 rejects it), and `REFLEX_EFFORT` sets
+  Sonnet 5.5's level by message, never by the top-level value, like Opus 5 and Fable 5.1.
+- Sonnet 5.5 is never sent a request with thinking disabled or a forced `tool_choice` (both 400 on it).
+- The decision record carries `refusal: {category, pin_released}` when a response stopped with `stop_reason:
+  "refusal"` (the API's short category only; not in `reflex share`).
+
+### Fixed
+
+- **A refusal from the model reflex moved a request to no longer breaks Claude Code's recovery.** Claude Code resends a
+  refused turn to the model it asked for; the pin sent that resend back to the refusing model, and the session ended.
+  The pin is now released as the refusal streams past, so the resend and the rest of the loop go to your model.
+
+### Measured
+
+- On 20 small coding tasks (Opus 5.5 requested at effort `medium`, 100 runs), Sonnet 5.5 wrote 19% fewer output tokens
+  and cost 25% less at list prices than Opus 5.5; Sonnet 5 wrote 25% more output and 63% more tokens in all, the
+  pattern that stopped Opus → Sonnet routing in the 2026-09-26 audit. Synthetic tasks; list-price estimates, not a bill
+  ([observations](docs/observations.md)).
+- Sonnet 5.5 refused (`reasoning_extraction`) a prompt that Opus 5.5 alone ran without a refusal; see the README's known
+  limits.
+
+Prices verified against the pricing page on 2026-09-29.
+
 ## 0.7.0 — 2026-09-28
 
 ### Added
