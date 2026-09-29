@@ -1,0 +1,150 @@
+{
+ "files": [
+  {
+   "file": "print-agent.main-new-turn.request.json",
+   "description": "main chat, first request, the prompt typed with -p (sdk-cli); trailing role:system environment message",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.284.b01",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "print-agent#002",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "print-agent.main-continuation.request.json",
+   "description": "main chat, continuation after the Agent tool returned; trailing role:system message announces MCP tools with tool_addition blocks",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.284.b01",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200,
+   "source": "print-agent#005",
+   "expect": {
+    "kind": "main",
+    "signal": "none",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "print-agent.subagent-new-turn.request.json",
+   "description": "general-purpose subagent, first request (x-claude-code-agent-id, cc_is_subagent, 'You are an agent for Claude Code'); trailing role:system message with tool_addition blocks",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "cc_version": "2.1.284.9c6",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200,
+   "source": "print-agent#003",
+   "expect": {
+    "kind": "subagent",
+    "signal": "header",
+    "turn": "new"
+   }
+  },
+  {
+   "file": "print-agent.subagent-new-turn.response.sse.txt",
+   "description": "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)",
+   "status": 200,
+   "response_headers": {
+    "date": "[redacted]",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "connection": "keep-alive",
+    "cache-control": "no-cache",
+    "anthropic-ratelimit-unified-5h-status": "[redacted]",
+    "anthropic-ratelimit-unified-representative-claim": "[redacted]",
+    "anthropic-ratelimit-unified-overage-status": "[redacted]",
+    "anthropic-ratelimit-unified-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-7d-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-reset": "[redacted]",
+    "anthropic-ratelimit-unified-7d-status": "[redacted]",
+    "anthropic-ratelimit-unified-fallback-percentage": "[redacted]",
+    "anthropic-ratelimit-unified-overage-disabled-reason": "[redacted]",
+    "anthropic-ratelimit-unified-7d-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-status": "[redacted]",
+    "server": "cloudflare",
+    "request-id": "[redacted]",
+    "strict-transport-security": "[redacted]",
+    "anthropic-organization-id": "[redacted]",
+    "anthropic-workspace-id": "[redacted]",
+    "traceresponse": "[redacted]",
+    "content-security-policy": "[redacted]",
+    "vary": "Accept-Encoding",
+    "cf-cache-status": "[redacted]",
+    "x-robots-tag": "[redacted]",
+    "cf-ray": "[redacted]"
+   }
+  },
+  {
+   "file": "print-agent.subagent-continuation.request.json",
+   "description": "general-purpose subagent, tool-loop continuation (last non-system message a tool_result), trailing role:system MCP authentication notice",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "cc_version": "2.1.284.9c6",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200,
+   "source": "print-agent#004",
+   "expect": {
+    "kind": "subagent",
+    "signal": "header",
+    "turn": "continuation"
+   }
+  },
+  {
+   "file": "print-agent.head-probe.json",
+   "description": "startup probe Claude Code sends to the base URL",
+   "expect": {
+    "passthrough": true
+   }
+  },
+  {
+   "file": "print-agent.hooks.jsonl",
+   "description": "hook payloads delivered by http hooks injected with --settings (one JSON per line, in arrival order)",
+   "events": [
+    "UserPromptSubmit",
+    "PreToolUse:Agent",
+    "SubagentStart(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "SubagentStop(sub)",
+    "PostToolUse:Agent",
+    "Stop"
+   ]
+  }
+ ],
+ "claude_code_version": "2.1.284",
+ "captured_at": "2026-09-29",
+ "platform": "darwin",
+ "entrypoints": [
+  "sdk-cli"
+ ],
+ "method": "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs",
+ "gaps": [
+  "see docs/wire-format.md"
+ ]
+}

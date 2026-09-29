@@ -167,7 +167,36 @@ const redactRequest = (q) => {
 };
 
 // Thinking signatures are opaque blobs that embed ids (a UUID was found base64-encoded in one); thinking text is private.
-const scrubSse = (text) => scrubString(text.replace(/"signature":"[^"]*"/g, '"signature":"[elided]"').replace(/"thinking":"(?:[^"\\]|\\.)+"/g, '"thinking":"[elided]"'));
+// A streamed string (tool input, text) arrives in chunks, so an identifier can straddle two deltas ("s/yusuf" +
+// "ziyaciv") and survive a per-line scrub. Each block's chunks are joined and scrubbed as one string; when that
+// changes it, the whole scrubbed string goes into the block's first delta and the later ones become "" (same
+// events, same concatenation semantics).
+const DELTA_FIELDS = { input_json_delta: "partial_json", text_delta: "text" };
+const sseDeltas = (lines) => {
+  const blocks = new Map();
+  lines.forEach((l, i) => {
+    if (!l.startsWith("data: ")) return;
+    let o; try { o = JSON.parse(l.slice(6)); } catch { return; }
+    const field = DELTA_FIELDS[o?.delta?.type];
+    if (o?.type !== "content_block_delta" || !field || typeof o.delta[field] !== "string") return;
+    const key = `${o.index}:${field}`;
+    if (!blocks.has(key)) blocks.set(key, { field, parts: [] });
+    blocks.get(key).parts.push({ i, o });
+  });
+  return blocks;
+};
+const joinedSseDeltas = (text) => [...sseDeltas(text.split("\n")).values()].map((b) => b.parts.map((p) => p.o.delta[b.field]).join(""));
+const scrubSseDeltas = (text) => {
+  const lines = text.split("\n");
+  for (const { field, parts } of sseDeltas(lines).values()) {
+    const joined = parts.map((p) => p.o.delta[field]).join("");
+    const clean = scrubString(joined);
+    if (clean === joined) continue;
+    parts.forEach((p, n) => { p.o.delta[field] = n === 0 ? clean : ""; lines[p.i] = `data: ${JSON.stringify(p.o)}`; });
+  }
+  return lines.join("\n");
+};
+const scrubSse = (text) => scrubString(scrubSseDeltas(text.replace(/"signature":"[^"]*"/g, '"signature":"[elided]"').replace(/"thinking":"(?:[^"\\]|\\.)+"/g, '"thinking":"[elided]"')));
 const truncateSse = (text, max = 12000) => {
   text = scrubSse(text);
   if (text.length <= max) return text;
@@ -285,7 +314,8 @@ const shapes = [
 ];
 let leaks = 0;
 for (const f of readdirSync(outDir)) {
-  const text = readFileSync(join(outDir, f), "utf8");
+  const raw = readFileSync(join(outDir, f), "utf8");
+  const text = f.endsWith(".sse.txt") ? [raw, ...joinedSseDeltas(raw)].join("\n") : raw;
   for (const s of secrets) if (text.includes(s)) { console.error(`LEAK: ${f} contains original identifier "${s.slice(0, 6)}…"`); leaks++; }
   for (const re of shapes) if (re.test(text)) { console.error(`LEAK: ${f} matches secret shape ${re}`); leaks++; }
 }
