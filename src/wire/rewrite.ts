@@ -54,13 +54,15 @@ const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5", "claude-sonnet-
  * Pairs with such a model verified since, written with the model id in place of its tier (docs/wire-format.md §5.7,
  * §5.12, test/fixtures/experiments/2.1.280/experiment.route-*opus55*, 2.1.284/experiment.route-*sonnet55*): first
  * request, subagent pin, a continuation holding source-signed thinking, and un-pin with target-signed thinking back to
- * the source. `sonnet` here is Sonnet 5, `opus` Opus 5 and older: Opus 5 <-> Sonnet 5.5 was not run.
+ * the source. `sonnet` here is Sonnet 5, `opus` Opus 5 and older (Opus 5 <-> Sonnet 5.5: a live Opus 5 session, the
+ * Opus 5.5 request with its model set to claude-opus-5, experiment.route-opus5-*sonnet55*).
  */
 const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set([
   "claude-opus-5-5>haiku", "claude-opus-5-5>sonnet", "haiku>claude-opus-5-5", "sonnet>claude-opus-5-5",
   "claude-opus-5-5>fable", "fable>claude-opus-5-5",
   "claude-opus-5-5>claude-sonnet-5-5", "claude-sonnet-5-5>claude-opus-5-5",
   "claude-sonnet-5-5>haiku", "haiku>claude-sonnet-5-5", "claude-sonnet-5-5>fable", "fable>claude-sonnet-5-5",
+  "opus>claude-sonnet-5-5", "claude-sonnet-5-5>opus",
 ]);
 const unverifiedKey = (m: string | null): string | undefined => UNVERIFIED_MODELS.find((u) => m !== null && m.toLowerCase().includes(u));
 export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean => {

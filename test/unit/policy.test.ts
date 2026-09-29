@@ -226,7 +226,7 @@ describe("config for policy", () => {
     const c = cfg({ REFLEX_MODEL_HAIKU: "h1", ANTHROPIC_DEFAULT_HAIKU_MODEL: "h2", ANTHROPIC_DEFAULT_OPUS_MODEL: "o2" });
     assert.equal(c.models.haiku, "h1");
     assert.equal(c.models.opus, "o2");
-    assert.equal(c.models.sonnet, "claude-sonnet-5");
+    assert.equal(c.models.sonnet, "claude-sonnet-5-5");
   });
 
   it("numeric settings are bounded and named in errors", () => {

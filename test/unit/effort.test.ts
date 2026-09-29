@@ -283,8 +283,8 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     assert.ok(a.rec.effort?.reasons.includes("effort_midturn_off"));
   });
 
-  it("a subagent routed to Sonnet: the top-level level on its first request, kept for its loop", async () => {
-    const h = harness({ REFLEX_EFFORT: "1" }, 0, tmp(), "sonnet");
+  it("a subagent routed to Sonnet 5: the top-level level on its first request, kept for its loop", async () => {
+    const h = harness({ REFLEX_EFFORT: "1", REFLEX_MODEL_SONNET: "claude-sonnet-5" }, 0, tmp(), "sonnet");
     const a = await h.send(sub);
     assert.equal(model(a.sent), "claude-sonnet-5");
     assert.equal(top(a.sent), "low");
@@ -293,6 +293,18 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     const c = await h.send(subCont);
     assert.equal(model(c.sent), "claude-sonnet-5");
     assert.equal(top(c.sent), "low");
+  });
+
+  it("a subagent routed to Sonnet 5.5: the level set in its first request's own system message, the top-level value untouched", async () => {
+    const h = harness({ REFLEX_EFFORT: "1" }, 0, tmp(), "sonnet");
+    const a = await h.send(sub);
+    assert.equal(model(a.sent), "claude-sonnet-5-5");
+    assert.equal(a.rec.effort?.via, "message");
+    assert.equal(top(a.sent), (sub.body as { output_config?: { effort?: string } }).output_config?.effort, "a top-level change would rewrite Sonnet 5.5's messages cache");
+    assert.equal(msgs(a.sent).filter((m) => m.output_config !== undefined).at(-1)?.output_config?.effort, "low");
+    const c = await h.send(subCont);
+    assert.equal(model(c.sent), "claude-sonnet-5-5");
+    assert.equal(msgs(c.sent).filter((m) => m.output_config !== undefined).at(-1)?.output_config?.effort, "low", "re-applied on its loop");
   });
 
   const withModel = (req: { headers: Json; body: Json }, model: string) => ({ headers: req.headers, body: { ...req.body, model } });
@@ -306,8 +318,8 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     assert.deepEqual(a.rec.forwarded.fields, ["messages.effort_added"]);
   });
 
-  it("a Sonnet main chat keeps its level, even with MIDTURN (a first-turn level would hold for the whole chat)", async () => {
-    const a = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0, tmp(), "sonnet").send(newTurn);
+  it("a Sonnet 5 main chat keeps its level, even with MIDTURN (a first-turn level would hold for the whole chat)", async () => {
+    const a = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_MODEL_SONNET: "claude-sonnet-5" }, 0, tmp(), "sonnet").send(newTurn);
     assert.equal(model(a.sent), "claude-sonnet-5", "the tier routing itself is unchanged");
     assert.equal(top(a.sent), "medium");
     assert.equal(a.rec.effort?.via, null);

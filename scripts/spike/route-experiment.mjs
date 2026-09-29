@@ -68,6 +68,11 @@ let delayPin = false;
 let interactiveExitS = null;
 let lean = false;
 let probeMessageOc = false;
+/**
+ * --source-model <id>: every request of the source tier goes out as this model instead (forwarded and probed alike), so
+ * the live session runs on a model Claude Code's aliases no longer name (e.g. claude-opus-5, now that `opus` is Opus 5.5).
+ */
+let sourceModel = null;
 /** --interactive in a folder never trusted: its trust dialog defaults to "No, exit", so Down comes before the Enter. */
 let newFolder = false;
 /** --model <tier>=<id>: the target model of a tier instead of DEFAULT_MODELS (a model not yet the tier default). */
@@ -131,6 +136,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--effort-verify-parts") verifyParts = new Set(argv[++i].split(","));
   else if (argv[i] === "--binding-tier") bindingTier = argv[++i];
   else if (argv[i] === "--new-folder") newFolder = true;
+  else if (argv[i] === "--source-model") sourceModel = argv[++i];
   else if (argv[i] === "--model") { const [t, id] = argv[++i].split("="); modelOverrides[t] = id; }
   else if (argv[i] === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
 }
@@ -471,7 +477,11 @@ async function effortApply(req, headers, parsed, facts, view) {
   for (let i = 1; i <= APPLY_REPEATS; i++) for (const [label, mutate] of variants) await probe(`apply:${label} #${i}`, req.url, headers, variantBody(base, mutate), ["puzzle", "max_tokens"], f, { keepHeaders: true, full: true });
 }
 
-async function route(req, raw, headers) {
+async function route(req, rawIn, headers) {
+  let raw = rawIn;
+  if (sourceModel) {
+    try { const b = JSON.parse(rawIn.toString("utf8")); if (String(b.model).includes(from)) { b.model = sourceModel; raw = Buffer.from(JSON.stringify(b)); } } catch { /* not json */ }
+  }
   const view = (() => { const r = parseRequest(req.headers, raw); return r.ok ? r.view : null; })();
   if (!view || !String(view.requestedModel).includes(from) || view.toolCount === 0) return { body: raw, headers, note: "passthrough" };
   const parsed = JSON.parse(raw.toString("utf8"));

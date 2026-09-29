@@ -34,7 +34,7 @@ function opusRequest(name: string, sid: string, prefix = "", model = "claude-opu
   return { ...f, headers: { ...f.headers, "x-claude-code-session-id": sid }, body: Buffer.from(JSON.stringify(b)) };
 }
 
-function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number, resHeaders?: Record<string, string>): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
+function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number, resHeaders?: Record<string, string>, delta?: Json): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reflex-router-"));
   const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50" });
   assert.ok(loaded.ok);
@@ -69,13 +69,13 @@ function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: A
   const records = (): DecisionRecord[] => (fs.existsSync(log.file) ? fs.readFileSync(log.file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as DecisionRecord) : []);
   return {
     calls: () => calls,
-    async send(fx, a, cacheCreate = 60_000, resHeaders = {}) {
+    async send(fx, a, cacheCreate = 60_000, resHeaders = {}, delta = { stop_reason: "end_turn" }) {
       answer = a;
       const before = records().length;
       const p = await router.prepare("POST", "/v1/messages?beta=true", fx.headers, fx.body);
       assert.ok(p.obs);
       p.obs.headers(200, { "content-type": "text/event-stream", ...resHeaders });
-      p.obs.tap(Buffer.from(`event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":${cacheCreate},"cache_read_input_tokens":0,"output_tokens":1}}}\n\nevent: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":50}}\n\n`));
+      p.obs.tap(Buffer.from(`event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":${cacheCreate},"cache_read_input_tokens":0,"output_tokens":1}}}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":${JSON.stringify(delta)},"usage":{"output_tokens":50}}\n\n`));
       p.obs.finish(true);
       const all = await waitFor(() => (records().length > before ? records() : null));
       return { rec: all[before]!, sent: JSON.parse(p.body.toString()) as Json };
@@ -89,11 +89,11 @@ describe("router: main-chat pin rules (session B)", () => {
   it("B1 fresh -> sonnet; its continuation stays on sonnet", async () => {
     const h = harness();
     const b1 = await h.send(opusRequest("main-new-turn", "B"), SONNETISH);
-    assert.equal(b1.sent["model"], "claude-sonnet-5");
+    assert.equal(b1.sent["model"], "claude-sonnet-5-5");
     assert.equal(b1.rec.guard?.reason, "fresh");
     const c = await h.send(opusRequest("main-continuation", "B"), null);
     assert.equal(c.rec.pin, "hit");
-    assert.equal(c.sent["model"], "claude-sonnet-5");
+    assert.equal(c.sent["model"], "claude-sonnet-5-5");
   });
 
   it("B2, Jev still says sonnet: stays on sonnet (Jev is asked; no switch, so no guard penalty)", async () => {
@@ -102,9 +102,9 @@ describe("router: main-chat pin rules (session B)", () => {
     const calls = h.calls();
     const b2 = await h.send(opusRequest("main-new-turn-plain", "B"), SONNETISH);
     assert.equal(h.calls(), calls + 1, "a pinned-below-requested conversation always asks");
-    assert.equal(b2.sent["model"], "claude-sonnet-5");
+    assert.equal(b2.sent["model"], "claude-sonnet-5-5");
     assert.deepEqual(b2.rec.plan?.reasons, ["downgrade", "stay_pinned"]);
-    assert.equal(b2.rec.forwarded.model, "claude-sonnet-5");
+    assert.equal(b2.rec.forwarded.model, "claude-sonnet-5-5");
   });
 
   it("B2, Jev says haiku: the switch is over the limit, so the conversation KEEPS sonnet (not opus)", async () => {
@@ -113,9 +113,9 @@ describe("router: main-chat pin rules (session B)", () => {
     const b2 = await h.send(opusRequest("main-new-turn-plain", "B"), { haiku: 0.99, sonnet: 0.01, opus: 0 });
     assert.equal(b2.rec.guard?.reason, "over_limit");
     assert.deepEqual(b2.rec.plan?.reasons, ["downgrade", "guard_blocked", "stay_pinned"]);
-    assert.equal(b2.sent["model"], "claude-sonnet-5", "was claude-opus-5 before the fix");
+    assert.equal(b2.sent["model"], "claude-sonnet-5-5", "was claude-opus-5 before the fix");
     const c = await h.send(opusRequest("main-continuation", "B"), null);
-    assert.equal(c.sent["model"], "claude-sonnet-5", "and its tool loop stays there too");
+    assert.equal(c.sent["model"], "claude-sonnet-5-5", "and its tool loop stays there too");
   });
 
   it("B2, Jev puts real mass on opus: moves back up to the requested model (never guarded)", async () => {
@@ -146,9 +146,9 @@ describe("router: main-chat pin rules (session B)", () => {
     const b2 = await h.send(opusRequest("main-new-turn-plain", "B"), "timeout");
     assert.equal(b2.rec.error, "backend:timeout");
     assert.deepEqual(b2.rec.plan?.reasons, ["stay_pinned_backend_error"]);
-    assert.equal(b2.sent["model"], "claude-sonnet-5");
+    assert.equal(b2.sent["model"], "claude-sonnet-5-5");
     const c = await h.send(opusRequest("main-continuation", "B"), null);
-    assert.equal(c.sent["model"], "claude-sonnet-5", "its tool loop stays pinned too");
+    assert.equal(c.sent["model"], "claude-sonnet-5-5", "its tool loop stays pinned too");
   });
 
   it("B2 when the decision never arrives (router bound): also stays pinned", async () => {
@@ -157,7 +157,7 @@ describe("router: main-chat pin rules (session B)", () => {
     const b2 = await h.send(opusRequest("main-new-turn-plain", "B"), "hang");
     assert.equal(b2.rec.error, "decision_late");
     assert.deepEqual(b2.rec.plan?.reasons, ["stay_pinned_backend_error"]);
-    assert.equal(b2.sent["model"], "claude-sonnet-5");
+    assert.equal(b2.sent["model"], "claude-sonnet-5-5");
   });
 
   it("B2 failure with reflex:opus: the override leaves the pin without asking the backend", async () => {
@@ -179,10 +179,10 @@ describe("router: main-chat pin rules (session B)", () => {
     const b1 = await h.send(opusRequest("main-new-turn", "C"), { haiku: 1, sonnet: 0, opus: 0 }, 160_000); // response: 160k-token prompt
     assert.equal(b1.sent["model"], "claude-haiku-4-5-20251001");
     const c = await h.send(opusRequest("main-continuation", "C"), null);
-    assert.equal(c.sent["model"], "claude-sonnet-5");
+    assert.equal(c.sent["model"], "claude-sonnet-5-5");
     assert.ok(c.rec.plan?.reasons.includes("context_ceiling"));
     const c2 = await h.send(opusRequest("main-continuation", "C"), null);
-    assert.equal(c2.sent["model"], "claude-sonnet-5", "the pin itself moved");
+    assert.equal(c2.sent["model"], "claude-sonnet-5-5", "the pin itself moved");
   });
 
   it("an override to Haiku on an oversized conversation is raised too (the ceiling is a hard limit)", async () => {
@@ -190,7 +190,7 @@ describe("router: main-chat pin rules (session B)", () => {
     await h.send(opusRequest("main-new-turn", "D"), { opus: 1, sonnet: 0, haiku: 0 }, 160_000);
     const t2 = await h.send(opusRequest("main-new-turn-plain", "D", "reflex:haiku "), null);
     assert.equal(t2.rec.override, "haiku");
-    assert.equal(t2.sent["model"], "claude-sonnet-5");
+    assert.equal(t2.sent["model"], "claude-sonnet-5-5");
     assert.ok(t2.rec.plan?.reasons.includes("context_ceiling"));
   });
 
@@ -207,7 +207,7 @@ describe("router: main-chat pin rules (session B)", () => {
   it("a /model switch drops the pin: the loop never stays on a tier decided for the old requested model", async () => {
     const h = harness();
     const b1 = await h.send(opusRequest("main-new-turn", "M"), SONNETISH);
-    assert.equal(b1.sent["model"], "claude-sonnet-5");
+    assert.equal(b1.sent["model"], "claude-sonnet-5-5");
     // The user switches to Haiku mid-loop: the Sonnet pin sits ABOVE the new requested tier.
     const c = await h.send(opusRequest("main-continuation", "M", "", "claude-haiku-4-5-20251001"), null);
     assert.equal(c.sent["model"], "claude-haiku-4-5-20251001");
@@ -215,14 +215,36 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.equal(c.rec.forwarded.rewritten, false);
   });
 
+  it("a routed request the target refused releases the pin: Claude Code's resend goes to the model it asked for", async () => {
+    const h = harness();
+    const refusal = { stop_reason: "refusal", stop_details: { type: "refusal", category: "reasoning_extraction" } };
+    const b1 = await h.send(opusRequest("main-new-turn", "R"), SONNETISH);
+    assert.equal(b1.sent["model"], "claude-sonnet-5-5");
+    assert.equal(b1.rec.refusal, undefined);
+    const c1 = await h.send(opusRequest("main-continuation", "R"), null, 60_000, {}, refusal);
+    assert.equal(c1.sent["model"], "claude-sonnet-5-5", "the refused request itself was routed");
+    assert.deepEqual(c1.rec.refusal, { category: "reasoning_extraction", pin_released: true });
+    const c2 = await h.send(opusRequest("main-continuation", "R"), null);
+    assert.equal(c2.sent["model"], "claude-opus-5");
+    assert.equal(c2.rec.forwarded.rewritten, false);
+  });
+
+  it("a refusal from the model the client asked for changes nothing", async () => {
+    const h = harness();
+    const refusal = { stop_reason: "refusal", stop_details: { category: "cyber" } };
+    const r = await h.send(opusRequest("main-new-turn", "N"), { opus: 1, sonnet: 0, haiku: 0 }, 60_000, {}, refusal);
+    assert.equal(r.sent["model"], "claude-opus-5");
+    assert.deepEqual(r.rec.refusal, { category: "cyber", pin_released: false });
+  });
+
   it("an Opus 5.5 main chat is routed to Sonnet (a verified pair) and its continuation follows the pin", async () => {
     const h = harness();
     const r = await h.send(opusRequest("main-new-turn", "U", "", "claude-opus-5-5"), SONNETISH);
-    assert.equal(r.sent["model"], "claude-sonnet-5");
+    assert.equal(r.sent["model"], "claude-sonnet-5-5");
     assert.ok(!r.rec.plan?.reasons.includes("rewrite_unverified"));
     assert.equal(r.rec.forwarded.rewritten, true);
     const c = await h.send(opusRequest("main-continuation", "U", "", "claude-opus-5-5"), null);
-    assert.equal(c.sent["model"], "claude-sonnet-5");
+    assert.equal(c.sent["model"], "claude-sonnet-5-5");
   });
 });
 

@@ -276,12 +276,12 @@ describe("route mode", () => {
       jev.set({ kind: "answer", tier: "sonnet", confidence: 0.9, reasoning: 2 });
       const n = stack.upstream.seen.length;
       const { rec } = await replay(stack, inSession(fx("subagent-new-turn"), "s-opus1", opus));
-      assert.deepEqual(rec.forwarded, { requested_model: "claude-opus-5", model: "claude-sonnet-5", rewritten: true, fields: ["model"], fallback: false, fallback_status: null, fallback_error: null });
+      assert.deepEqual(rec.forwarded, { requested_model: "claude-opus-5", model: "claude-sonnet-5-5", rewritten: true, fields: ["model"], fallback: false, fallback_status: null, fallback_error: null });
       const orig = JSON.parse(inSession(fx("subagent-new-turn"), "s-opus1", opus).body.toString()) as Json;
       assert.deepEqual({ ...sentBody(stack, n), model: "claude-opus-5" }, orig, "nothing but the model changed");
       const c = await replay(stack, inSession(fx("subagent-continuation"), "s-opus1", opus));
       assert.equal(c.rec.pin, "hit");
-      assert.equal(sentBody(stack, n + 1)["model"], "claude-sonnet-5");
+      assert.equal(sentBody(stack, n + 1)["model"], "claude-sonnet-5-5");
     });
 
     it("a subagent Jev judges haiku-level goes to Haiku with the full rewrite", async () => {

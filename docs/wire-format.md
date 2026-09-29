@@ -621,7 +621,9 @@ thinking on, or dropping the forced tool), so a request carrying one is not reta
 recorded as `rewrite_failed`. In the captures, Claude Code sends thinking disabled only on side calls (title generation,
 `no_tools`), which reflex does not route, and never sends `tool_choice`.
 
-### 5.12 Sonnet 5.5 (experiment, 2.1.284, est. $3.55 in all, cap $15)
+### 5.12 Sonnet 5.5 (experiment, 2.1.284)
+
+Est. $3.55 for the first twelve runs (cap $15), $1.17 for the Opus 5 pairs and $0.22 for the refusal runs through reflex.
 
 Claude Code 2.1.284 resolves the `sonnet` alias to `claude-sonnet-5-5` (its baked-in model table: capabilities
 `per_turn_effort`, `mid_conv_system`, `rejects_disabled_thinking`, `refusal_fallback`, `org_locked_thinking`, no
@@ -636,11 +638,15 @@ Claude Code 2.1.284 resolves the `sonnet` alias to `claude-sonnet-5-5` (its bake
 | Opus 5.5 → Sonnet 5.5 (interactive, `cli`, `-interactive`) | 200 | 200 | 200 | 200; a history made by Opus 5.5 and Sonnet 5.5 → Haiku: 200 |
 | Sonnet 5.5 → Haiku / Opus 5.5 / Fable 5.1 (`route-sonnet55-subagents`) | 200 ×3 | 200 ×3 | 200 ×3 (Sonnet 5.5 block) | 200 ×3 (Haiku- and Opus 5.5-signed blocks) |
 | Haiku → Sonnet 5.5, Fable 5.1 → Sonnet 5.5 (`route-{haiku,fable}-to-sonnet55-subagent`) | 200, 200 | 200, 200 | 200, 200 (Haiku-, Fable-signed) | 200, 200 (Sonnet 5.5-signed) |
+| Opus 5 → Sonnet 5.5 (`route-opus5-to-sonnet55`, `-main`) | 200 | 200 (main and subagent) | 200 (Opus 5 block) | 200; → Haiku: 200 |
+| Sonnet 5.5 → Opus 5 (`route-sonnet55-to-opus5-subagent`, `-thinking`) | 200 | 200 | 200 (Sonnet 5.5 block) | 200 |
 
 Only `model` changes towards Sonnet 5.5, plus the usual `tool_addition` lift (Sonnet 5.5 has no `mid_conv_tool_change`;
 the lifted requests were accepted). Unlike Sonnet 5, Sonnet 5.5 **accepts a system message's per-turn `output_config`**
-(first request with it kept: 200), so `retarget` keeps it for that model (`MESSAGE_OUTPUT_CONFIG_MODELS`). Opus 5 ↔
-Sonnet 5.5 was not run and stays `rewrite_unverified`.
+(first request with it kept: 200), so `retarget` keeps it for that model (`MESSAGE_OUTPUT_CONFIG_MODELS`). The Opus 5
+rows had no `opus` alias to start from (it names Opus 5.5 on 2.1.284): `route-experiment.mjs --source-model
+claude-opus-5` sent every Opus 5.5 request of the live session as `claude-opus-5`, a request shape Opus 5 accepts
+(§5.8), so the session itself ran on Opus 5.
 
 **Effort** (`effort-verify-sonnet55`, the Opus 5.5 first request retargeted to Sonnet 5.5; a fixed puzzle, answer 1006,
 correct in every run). An appended effort message keeps the cache (18,481 read, 0 written) and changes the level:
@@ -658,10 +664,20 @@ what an enforced account does. reflex uses `set` there, as on Opus 5.5 where `se
 **Refusals.** Two runs whose prompt asked the model to work a puzzle out "carefully in your head" before a tool call
 got `stop_reason: "refusal"`, category `reasoning_extraction`, from Sonnet 5.5
 (`effort-verify-set-sonnet55-refusal`). Claude Code then resent the turn as a new request to `claude-opus-5-5`
-(the requested model), which refused too, and exited 1; later requests carried `fallback-credit-2026-06-01`. What
-reflex's pin does with that resent request, and which model Claude Code picks when the requested model is not the one
-that refused, is not measured. This is why the sonnet tier default stays `claude-sonnet-5` (Claude Code's table gives it no `refusal_fallback`);
-`REFLEX_MODEL_SONNET=claude-sonnet-5-5` routes the sonnet tier to Sonnet 5.5, over the verified pairs above.
+(the requested model), which refused too, and exited 1; later requests carried `fallback-credit-2026-06-01`.
+
+**What Claude Code sends after a refusal, and what the pin did with it** (the built reflex, a loopback Jev fixing
+`sonnet`, `scripts/spike/token-compare/run.mts` with the puzzle prompt, behind `scripts/spike/dump-proxy.mjs`). The
+refused response carries `stop_details` `{type: "refusal", category, explanation, fallback_credit_token,
+fallback_has_prefill_claim}`. Claude Code then resends the same request to the model it asked for, with one text block
+added to the last user message ("Your response above was stopped by a safety classifier — this is not a tool or API
+error. …") and `fallback-credit-2026-06-01` in `anthropic-beta`; reflex classifies it as side `tool_result_text`. In 3
+of 4 runs Sonnet 5.5 refused, and the pin sent that resend to Sonnet 5.5 again: refused again, `claude -p` exited 1.
+Claude Code's own recovery was defeated. **Fixed:** the usage parser also reads the stop reason
+(`src/wire/anthropic.ts`); when a request reflex moved to another model ends in `refusal`, the conversation's pin is
+released while the stream is still passing (`src/worker/router.ts`), so the resend and the rest of the loop go to the
+model the client asked for, which is every other fail-open path's outcome too. The record gets `refusal: {category,
+pin_released}`. With that in place the sonnet tier default is `claude-sonnet-5-5`, Claude Code's own `sonnet`.
 
 ## 6. Responses
 
