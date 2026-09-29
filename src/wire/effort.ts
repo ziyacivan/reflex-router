@@ -24,14 +24,21 @@ const MESSAGE_EFFORT: readonly { readonly match: RegExp; readonly top: boolean }
   { match: /claude-opus-5(?!-\d)/, top: false },
   { match: /claude-fable-5-1/, top: false },
 ];
+/**
+ * Models whose effort reflex leaves alone until measured: Sonnet 5.5 takes a per-message effort (beta) where Sonnet 5
+ * rejected one, so the top-level value may not be the level in effect, and no capture shows what Claude Code sends it.
+ */
+const UNMEASURED_EFFORT: readonly string[] = ["claude-sonnet-5-5"];
+const unmeasured = (model: string | null): boolean => model !== null && UNMEASURED_EFFORT.some((u) => model.toLowerCase().includes(u));
 export const messageEffort = (model: string | null): { readonly top: boolean } | null => (model === null ? null : (MESSAGE_EFFORT.find((m) => m.match.test(model.toLowerCase())) ?? null));
 
 /**
  * How reflex may change the level of a request to `model` this turn: by message (Opus 5.5, Opus 5, Fable 5.1: any
- * request), by the top-level value (Sonnet, only when its cache is being written anyway: `cacheFresh`), or not at all
- * (Haiku takes no effort).
+ * request), by the top-level value (Sonnet 5, only when its cache is being written anyway: `cacheFresh`), or not at all
+ * (Haiku takes no effort; UNMEASURED_EFFORT).
  */
 export function effortVia(model: string | null, cacheFresh: boolean): "message" | "top-level" | null {
+  if (unmeasured(model)) return null;
   if (messageEffort(model)) return "message";
   if (cacheFresh && tierOfModel(model) === "sonnet") return "top-level";
   return null;

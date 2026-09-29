@@ -19,6 +19,7 @@ describe("statusline", () => {
     assert.equal(shortModel("claude-opus-5-5[1m]"), "Opus 5.5");
     assert.equal(shortModel(HAIKU), "Haiku 4.5");
     assert.equal(shortModel(SONNET), "Sonnet 5");
+    assert.equal(shortModel("claude-sonnet-5-5[1m]"), "Sonnet 5.5");
     assert.equal(shortModel("claude-fable-5-1"), "Fable 5.1");
     assert.equal(shortModel("some-gateway-model"), "some-gateway-model");
   });

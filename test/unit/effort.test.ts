@@ -136,6 +136,7 @@ describe("effort on the wire", () => {
     assert.equal(effortVia("claude-sonnet-5", true), "top-level");
     assert.equal(effortVia("claude-sonnet-5", false), null, "a top-level change rewrites Sonnet's whole cache");
     assert.equal(effortVia("claude-haiku-4-5-20251001", true), null);
+    for (const m of ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]"]) assert.equal(effortVia(m, true), null, `${m}: unmeasured, left alone`);
     const noTop = withEffort(buf(next), () => undefined, "low", false)!;
     assert.equal(shape(noTop.body), "u s:high a u s:low");
     assert.equal(top(noTop.body), "high", "message only: the top-level value is left alone");

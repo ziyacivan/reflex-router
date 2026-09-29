@@ -27,6 +27,7 @@ export const PRICES: Readonly<Record<Tier, TierPrice>> = {
 /** Models priced differently from their tier's default above, matched by substring of the model id; first match wins. */
 const MODEL_PRICES: readonly (readonly [string, TierPrice])[] = [
   ["claude-opus-5-5", PRICES.opus],
+  ["claude-sonnet-5-5", PRICES.sonnet], // Sonnet 5.5: Sonnet 5's $2 / $10, cache reads $0.20
   ["claude-opus-", { input: 5, output: 25, cacheReadMult: 0.1 }], // Opus 5, 4.8, 4.7, 4.6, 4.5
   ["claude-fable-5-1", PRICES.fable],
   ["claude-fable-5", { input: 10, output: 50, cacheReadMult: 0.1 }], // Fable 5: cache reads $1, not 5.1's $0.25

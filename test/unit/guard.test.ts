@@ -22,6 +22,7 @@ describe("pricing", () => {
     assert.deepEqual(priceOf("opus", "claude-opus-5-5[1m]"), PRICES.opus);
     assert.deepEqual(priceOf("opus", null), PRICES.opus);
     assert.deepEqual(priceOf("sonnet", "claude-sonnet-5"), PRICES.sonnet);
+    assert.deepEqual(priceOf("sonnet", "claude-sonnet-5-5[1m]"), PRICES.sonnet, "Sonnet 5.5 keeps Sonnet 5's price");
     assert.deepEqual(priceOf("fable", "claude-fable-5-1"), PRICES.fable);
     assert.deepEqual(priceOf("fable", "claude-fable-5"), { input: 10, output: 50, cacheReadMult: 0.1 }, "Fable 5 reads its cache at 0.1x");
   });
@@ -103,5 +104,15 @@ describe("verified retargets", () => {
     assert.equal(isVerifiedRetarget("opus", "fable", "claude-opus-5-5", M.fable), true);
     assert.equal(isVerifiedRetarget("fable", "opus", M.fable, "claude-opus-5-5"), true);
     assert.equal(isVerifiedRetarget("opus", "opus", "claude-opus-5-5", "claude-opus-5-5"), false);
+  });
+
+  it("no Sonnet 5.5 pair is verified yet, on either side", () => {
+    for (const s55 of ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]"]) {
+      for (const [t, m] of [["haiku", M.haiku], ["opus", M.opus], ["opus", "claude-opus-5-5"], ["fable", M.fable]] as const) {
+        assert.equal(isVerifiedRetarget("sonnet", t, s55, m), false, `${s55} > ${m}`);
+        assert.equal(isVerifiedRetarget(t, "sonnet", m, s55), false, `${m} > ${s55}`);
+      }
+    }
+    assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5", M.sonnet), true, "Sonnet 5 is not Sonnet 5.5");
   });
 });
