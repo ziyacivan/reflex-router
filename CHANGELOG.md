@@ -6,6 +6,14 @@
 
 _Nothing yet._
 
+## 0.8.2 — 2026-09-29
+
+### Fixed
+
+- Status-line examples in the README, `docs/reference.md` and `src/statusline.ts`, and the `tierOfModel` comment, still
+  named Sonnet 5 as the sonnet tier's model; they now say Sonnet 5.5. Comments and docs only, no behaviour change.
+  (Found by a contributor's PR, which the 0.8.0 change had already superseded.)
+
 ## 0.8.1 — 2026-09-29
 
 ### Changed
