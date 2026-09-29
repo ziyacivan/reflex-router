@@ -6,6 +6,19 @@
 
 _Nothing yet._
 
+## 0.8.1 — 2026-09-29
+
+### Changed
+
+- **Claude Code 2.1.284 is a tested version.** Fixtures from one `claude -p` capture with a subagent; its headers and
+  `anthropic-beta` match 2.1.282. The `version check: warn (minor_mismatch)` on 2.1.284 is gone.
+
+### Fixed
+
+- The fixture redactor scrubbed streamed responses line by line, so a home path split across two `input_json_delta`
+  chunks kept the username; the 2.1.280 fixture carried it that way. Each block's chunks are now joined and scrubbed
+  as one string, and the leak scan checks the joined text. Fixtures are not part of the npm package.
+
 ## 0.8.0 — 2026-09-29
 
 ### Added
