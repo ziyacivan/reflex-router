@@ -4,7 +4,19 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Changed
+
+- **The tier question describes Sonnet by what Sonnet 5.5 does.** Sonnet: features and behaviour changes whose intended
+  behaviour can be stated, including ones across several modules or in security-relevant code; not a bug fix whose cause
+  and fix are not both clear. Opus: debugging, subtle correctness fixes, and design where the intended behaviour must be
+  worked out. On 54 real tasks Sonnet 5.5 matched Opus 5.5's correctness except on bug fixes, and with the new text a
+  higher `REFLEX_MASS_EPS` (0.25) moves the tasks Sonnet did as well without the ones it did not
+  ([observations](docs/observations.md)). The default threshold is unchanged.
+
+### Added
+
+- `scripts/calibrate/tier-ab.ts`: where the tier question sends a labelled task corpus under the checkout's policy
+  text (Jev, the product's state and plan; numbers only). Run on two checkouts to compare a text change.
 
 ## 0.8.2 — 2026-09-29
 

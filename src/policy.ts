@@ -27,14 +27,16 @@ const TIER_OPTIONS: Readonly<Record<Tier, { what: string; not_for: string; examp
     examples: ["list the files in a directory", "rename a variable across one file", "run the tests and report the result", "find where a function is defined"],
   },
   sonnet: {
-    what: "Ordinary software work: a well-understood change or investigation that takes some judgement about the approach.",
-    not_for: "Problems whose cause is unknown across systems, or decisions where a subtle mistake is costly.",
-    examples: ["add a flag to a CLI command and its tests", "fix a failing test with a clear error message", "summarise how a module works"],
+    what:
+      "Software work whose intended behaviour can be stated: building a feature or changing behaviour, including changes " +
+      "that span several modules or touch security-relevant code, when the approach can be worked out from the codebase.",
+    not_for: "Fixing a bug in existing behaviour unless its cause and its fix are both already clear, or decisions where a subtle mistake is costly.",
+    examples: ["add a flag to a CLI command and its tests", "implement an endpoint from a written spec, with its tests", "extend a feature through the modules it touches", "summarise how a module works"],
   },
   opus: {
-    what: "Hard reasoning: unknown-cause debugging, cross-module design, security-sensitive or subtle correctness work.",
-    not_for: "Routine changes whose approach is already clear.",
-    examples: ["find why a race condition corrupts data intermittently", "design the module boundaries for a new subsystem", "review an auth flow for vulnerabilities"],
+    what: "Hard reasoning: debugging, fixing subtle correctness bugs in existing behaviour, and design where the intended behaviour itself must be worked out.",
+    not_for: "Changes whose intended behaviour is clear, even when they are large or span several modules.",
+    examples: ["find why a race condition corrupts data intermittently", "fix an edge case in token validation without breaking the others", "design the module boundaries for a new subsystem", "review an auth flow for vulnerabilities"],
   },
   fable: {
     what: "The most demanding open-ended research and reasoning, beyond what opus handles well.",
