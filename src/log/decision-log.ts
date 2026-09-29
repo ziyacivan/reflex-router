@@ -142,6 +142,11 @@ export interface DecisionRecord {
   };
   readonly usage: { readonly input: number; readonly output: number; readonly cache_read: number; readonly cache_create: number } | null;
   readonly usage_unknown_reason: string | null;
+  /**
+   * The response stopped with `stop_reason: "refusal"`: its `stop_details.category` (a short API category, never text),
+   * and whether a pin was released because of it (a routed request only).
+   */
+  readonly refusal?: { readonly category: string | null; readonly pin_released: boolean };
   /** Backend or pipeline error category; never a message body. */
   readonly error: string | null;
   readonly sent: { readonly keys: readonly string[]; readonly chars: number } | null;

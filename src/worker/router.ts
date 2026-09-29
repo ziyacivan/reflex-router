@@ -403,6 +403,7 @@ export class Router {
     let forwardStarted = started;
     let tee: UsageTee | null = null;
     let finished = false;
+    let refusalReleased = false;
     let fallbackStatus: number | null = null;
     let fallbackError: string | null = null;
     let quota: Quota | null = null;
@@ -430,7 +431,16 @@ export class Router {
         const moved = fallbackStatus === null && v.requestedModel !== null && sentModel !== v.requestedModel;
         return st === 200 && moved && plain && usageFormat(typeof ct === "string" ? ct : undefined) === "sse" ? new ModelRestorer(v.requestedModel) : null;
       },
-      tap: (chunk) => tee?.write(chunk),
+      tap: (chunk) => {
+        tee?.write(chunk);
+        // The model reflex moved this request to refused it. Claude Code answers a refusal by resending the turn, with a
+        // note, to the model it asked for; the pin would send that to the refusing model again (2.1.284, Sonnet 5.5,
+        // docs/wire-format.md §5.12). Released here, while the stream is still passing, so the resend finds it gone.
+        if (!refusalReleased && routedTier !== null && fallbackStatus === null && tee?.stop?.reason === "refusal") {
+          refusalReleased = true;
+          if (conv) conv.pin = { target: null, from: requestedTier };
+        }
+      },
       fallback: (st, err) => {
         fallbackStatus = st;
         fallbackError = err;
@@ -449,7 +459,7 @@ export class Router {
       finish: (complete) => {
         if (finished) return;
         finished = true;
-        const usageP = tee ? tee.end(complete) : Promise.resolve({ usage: null, unknownReason: "no_response" });
+        const usageP = tee ? tee.end(complete) : Promise.resolve({ usage: null, unknownReason: "no_response", stop: null });
         void Promise.all([outcomeP, usageP, cmp.p])
           .then(([outcome, u, compare]) => {
             if (conv && u.usage && status === 200) {
@@ -503,6 +513,7 @@ export class Router {
               timing: { decision_wait_ms: decisionWaitMs, decision_deadline_ms: decisionDeadlineMs(this.d.config), upstream_first_byte_ms: upstreamFirstByteMs },
               usage: u.usage ? { input: u.usage.input, output: u.usage.output, cache_read: u.usage.cacheRead, cache_create: u.usage.cacheCreate } : null,
               usage_unknown_reason: u.unknownReason,
+              ...(u.stop?.reason === "refusal" ? { refusal: { category: u.stop.category, pin_released: refusalReleased } } : {}),
               ...(fingerprint !== undefined ? { side_fingerprint: fingerprint } : {}),
               delegate_hint: this.d.config.delegate ? HINT_VERSION : null,
               // Only next to a decision of the primary backend: a comparison needs both sides.

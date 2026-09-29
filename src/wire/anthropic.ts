@@ -11,6 +11,15 @@ export interface Usage {
   readonly cacheCreate: number;
 }
 
+/**
+ * Why the response stopped, and the category of a refusal (`stop_details.category`, e.g. "reasoning_extraction"):
+ * `message_delta.delta` in a stream, the top level of a JSON body (2.1.284, Sonnet 5.5, docs/wire-format.md §5.12).
+ */
+export interface Stop {
+  readonly reason: string;
+  readonly category: string | null;
+}
+
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined);
@@ -25,6 +34,7 @@ export class UsageParser {
   #output: number | undefined;
   #cacheRead: number | undefined;
   #cacheCreate: number | undefined;
+  #stop: Stop | null = null;
   #json = "";
   #jsonTooBig = false;
 
@@ -60,7 +70,10 @@ export class UsageParser {
     if (this.format === "json" && this.#json !== "") {
       try {
         const o: unknown = JSON.parse(this.#json);
-        if (isObj(o)) this.#take(o["usage"]);
+        if (isObj(o)) {
+          this.#take(o["usage"]);
+          this.#takeStop(o);
+        }
       } catch {
         // not JSON: no usage
       }
@@ -88,7 +101,23 @@ export class UsageParser {
     }
     if (!isObj(o)) return;
     if (o["type"] === "message_start" && isObj(o["message"])) this.#take(o["message"]["usage"]);
-    else if (o["type"] === "message_delta") this.#take(o["usage"]);
+    else if (o["type"] === "message_delta") {
+      this.#take(o["usage"]);
+      if (isObj(o["delta"])) this.#takeStop(o["delta"]);
+    }
+  }
+
+  /** The stop reason seen so far (a stream's arrives in its last `message_delta`), or null. */
+  stop(): Stop | null {
+    return this.#stop;
+  }
+
+  #takeStop(o: Json): void {
+    const reason = o["stop_reason"];
+    if (typeof reason !== "string" || reason === "") return;
+    const d = o["stop_details"];
+    const category = isObj(d) && typeof d["category"] === "string" ? d["category"].slice(0, 40) : null;
+    this.#stop = { reason: reason.slice(0, 40), category };
   }
 
   #take(u: unknown): void {

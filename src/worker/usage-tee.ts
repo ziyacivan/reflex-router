@@ -3,12 +3,13 @@
 // in `usage: null` with a reason, never in an error on the response path.
 import zlib from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
-import { UsageParser, usageFormat, type Usage } from "../wire/anthropic.js";
+import { UsageParser, usageFormat, type Stop, type Usage } from "../wire/anthropic.js";
 
 export interface UsageOutcome {
   readonly usage: Usage | null;
   /** Why usage is null: "encoding:<name>", "content_type", "decode_error", "no_usage", "incomplete". */
   readonly unknownReason: string | null;
+  readonly stop: Stop | null;
 }
 
 export class UsageTee {
@@ -56,6 +57,11 @@ export class UsageTee {
     else this.#text(chunk);
   }
 
+  /** The stop reason parsed so far; synchronous, so an uncompressed stream shows it as soon as its bytes passed. */
+  get stop(): Stop | null {
+    return this.#parser?.stop() ?? null;
+  }
+
   /** `complete` = the upstream response ended normally. */
   async end(complete: boolean): Promise<UsageOutcome> {
     if (this.#inflate) {
@@ -63,10 +69,11 @@ export class UsageTee {
       else this.#inflate.destroy();
       if (complete && this.#failed === null) await this.#done;
     }
-    if (this.#failed !== null) return { usage: null, unknownReason: this.#failed };
+    if (this.#failed !== null) return { usage: null, unknownReason: this.#failed, stop: null };
     this.#parser?.push(this.#decoder.end());
     const usage = this.#parser?.result() ?? null;
-    if (usage === null) return { usage: null, unknownReason: complete ? "no_usage" : "incomplete" };
-    return { usage, unknownReason: null };
+    const stop = this.#parser?.stop() ?? null;
+    if (usage === null) return { usage: null, unknownReason: complete ? "no_usage" : "incomplete", stop };
+    return { usage, unknownReason: null, stop };
   }
 }

@@ -11,9 +11,21 @@ const HOP = new Set(["host", "connection", "keep-alive", "transfer-encoding", "c
 http.createServer((req, res) => {
   const chunks = []; req.on("data", (c) => chunks.push(c)); req.on("end", () => {
     const body = Buffer.concat(chunks);
-    if (req.method === "POST" && req.url.startsWith("/v1/messages")) fs.writeFileSync(`${out}/${String(++n).padStart(3, "0")}.json`, body, { mode: 0o600 });
+    const dump = req.method === "POST" && req.url.startsWith("/v1/messages") ? `${out}/${String(++n).padStart(3, "0")}` : null;
+    if (dump) fs.writeFileSync(`${dump}.json`, body, { mode: 0o600 });
     const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => !HOP.has(k)));
-    const up = https.request({ host: "api.anthropic.com", path: req.url, method: req.method, headers: { ...headers, "content-length": body.length } }, (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
+    const up = https.request({ host: "api.anthropic.com", path: req.url, method: req.method, headers: { ...headers, "content-length": body.length } }, (r) => {
+      res.writeHead(r.statusCode, r.headers);
+      let text = "";
+      r.on("data", (c) => { text += c.toString("utf8"); res.write(c); });
+      r.on("end", () => {
+        res.end();
+        if (!dump) return;
+        // Structure only: the beta header and the stop reason, never auth headers or the answer.
+        const stop = /"stop_reason":"([a-z_]+)"(?:,"stop_sequence":[^,]*)?(?:,"stop_details":(\{[^}]*\}))?/.exec(text);
+        fs.writeFileSync(`${dump}.meta.json`, JSON.stringify({ url: req.url, status: r.statusCode, beta: req.headers["anthropic-beta"] ?? null, stop_reason: stop?.[1] ?? null, stop_details: stop?.[2] ? JSON.parse(stop[2]) : null }), { mode: 0o600 });
+      });
+    });
     up.on("error", () => { if (!res.headersSent) res.writeHead(502).end(); else res.destroy(); }); up.end(body);
   });
 }).listen(Number(process.argv[3] ?? 47200), "127.0.0.1", () => console.log("up"));

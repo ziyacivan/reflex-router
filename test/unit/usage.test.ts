@@ -51,6 +51,24 @@ describe("UsageParser", () => {
     assert.equal(parseAll("data: {oops\n\n", []), null);
   });
 
+  it("reads the stop reason, and a refusal's category (Sonnet 5.5 shape, 2.1.284)", () => {
+    const p = new UsageParser("sse");
+    p.push(SSE);
+    assert.deepEqual(p.stop(), { reason: "end_turn", category: null });
+    const refusal = SSE.replace('"delta":{"stop_reason":"end_turn"}', '"delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"reasoning_extraction","explanation":"This request was blocked"}}');
+    for (const i of [1, 200, refusal.length - 40]) {
+      const q = new UsageParser("sse");
+      q.push(refusal.slice(0, i));
+      q.push(refusal.slice(i));
+      assert.deepEqual(q.stop(), { reason: "refusal", category: "reasoning_extraction" }, `split at ${i}`);
+    }
+    const j = new UsageParser("json");
+    j.push(JSON.stringify({ stop_reason: "refusal", stop_details: { category: "cyber" }, usage: { input_tokens: 1, output_tokens: 0 } }));
+    j.result();
+    assert.deepEqual(j.stop(), { reason: "refusal", category: "cyber" });
+    assert.equal(new UsageParser("sse").stop(), null);
+  });
+
   it("maps content types", () => {
     assert.equal(usageFormat("text/event-stream; charset=utf-8"), "sse");
     assert.equal(usageFormat("application/json"), "json");
@@ -70,23 +88,23 @@ describe("UsageTee (decompression side branch)", () => {
   it("identity, gzip, br and deflate all yield the usage, even with multi-byte characters split across chunks", async () => {
     for (const [enc, bytes] of [[undefined, raw], ["gzip", zlib.gzipSync(raw)], ["br", zlib.brotliCompressSync(raw)], ["deflate", zlib.deflateSync(raw)]] as const) {
       const r = await feed(bytes, enc, 3);
-      assert.deepEqual(r, { usage: EXPECTED, unknownReason: null }, String(enc));
+      assert.deepEqual(r, { usage: EXPECTED, unknownReason: null, stop: { reason: "end_turn", category: null } }, String(enc));
     }
   });
 
   it("an undecodable coding (zstd) is recorded as unknown, not an error", async () => {
-    assert.deepEqual(await feed(raw, "zstd"), { usage: null, unknownReason: "encoding:zstd" });
+    assert.deepEqual(await feed(raw, "zstd"), { usage: null, unknownReason: "encoding:zstd", stop: null });
   });
 
   it("corrupt compressed data is a decode_error", async () => {
-    assert.deepEqual(await feed(Buffer.from("definitely not gzip"), "gzip"), { usage: null, unknownReason: "decode_error" });
+    assert.deepEqual(await feed(Buffer.from("definitely not gzip"), "gzip"), { usage: null, unknownReason: "decode_error", stop: null });
   });
 
   it("a response that broke off before any usage is incomplete; a non-SSE/JSON type is content_type", async () => {
-    assert.deepEqual(await feed(Buffer.from("event: ping\n\n"), undefined, 7, false), { usage: null, unknownReason: "incomplete" });
+    assert.deepEqual(await feed(Buffer.from("event: ping\n\n"), undefined, 7, false), { usage: null, unknownReason: "incomplete", stop: null });
     const tee = new UsageTee("text/html", undefined);
     tee.write(Buffer.from("<html>"));
-    assert.deepEqual(await tee.end(true), { usage: null, unknownReason: "content_type" });
+    assert.deepEqual(await tee.end(true), { usage: null, unknownReason: "content_type", stop: null });
   });
 });
 
