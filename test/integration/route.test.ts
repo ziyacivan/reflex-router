@@ -58,7 +58,9 @@ describe("route mode", () => {
   let stack: Stack;
   before(async () => {
     jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.9, reasoning: 0.4 });
-    stack = await startStack({ effectiveMode: "route", config: { mode: "route", jevBaseUrl: jev.url, jevDeadlineMs: 500 } });
+    // The Opus fixtures here are Opus 5 requests: Opus 5 -> Sonnet 5 is verified, Opus 5 -> Sonnet 5.5 (the built-in
+    // sonnet model) is not, so this stack keeps Sonnet 5 as the sonnet tier.
+    stack = await startStack({ effectiveMode: "route", config: { mode: "route", jevBaseUrl: jev.url, jevDeadlineMs: 500, models: { ...DEFAULT_MODELS, sonnet: "claude-sonnet-5" } } });
   });
   after(async () => {
     await stack.close();

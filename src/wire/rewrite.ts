@@ -44,15 +44,17 @@ const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>s
  * Models no retarget has been verified for yet, on either side: a pair whose source or target model matches one is
  * unverified whatever its tiers are. A new model in a verified family is not the model that was verified.
  */
-const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5"];
+const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5"];
 /**
- * Pairs with such a model verified since, written with the model id in place of its tier (docs/wire-format.md §5.7,
- * test/fixtures/experiments/2.1.280/experiment.route-*opus55*): first request, subagent pin, a continuation holding
- * source-signed thinking, and un-pin with target-signed thinking back to the source.
+ * Pairs with such a model verified since, written with the model id in place of its tier (docs/wire-format.md §5.7 and
+ * §5.12, test/fixtures/experiments/2.1.280/experiment.route-*opus55*, 2.1.284/experiment.route-*sonnet55*): first
+ * request, subagent pin, a continuation holding source-signed thinking, and un-pin with target-signed thinking back to
+ * the source. A `sonnet` row is Sonnet 5 (a REFLEX_MODEL_SONNET setting); Sonnet 5.5 has rows of its own.
  */
 const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set([
   "claude-opus-5-5>haiku", "claude-opus-5-5>sonnet", "haiku>claude-opus-5-5", "sonnet>claude-opus-5-5",
   "claude-opus-5-5>fable", "fable>claude-opus-5-5",
+  "claude-opus-5-5>claude-sonnet-5-5", "claude-sonnet-5-5>claude-opus-5-5", "claude-sonnet-5-5>haiku", "haiku>claude-sonnet-5-5",
 ]);
 const unverifiedKey = (m: string | null): string | undefined => UNVERIFIED_MODELS.find((u) => m !== null && m.toLowerCase().includes(u));
 export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean => {
@@ -88,13 +90,14 @@ export function retargetBetas(header: string | undefined, to: Tier): { readonly 
 
 /**
  * Target models that 400 on a shape no rewrite can keep the meaning of, matched by substring of the model id. A request
- * carrying one is not rewritten: it goes to the model it asked for (API docs, 2026-09: Opus 5.5 and Fable 5.x reject
- * `thinking: {type: "disabled"}` at every effort level; Opus 5.5 and Fable 5.1 reject `tool_choice` `any`/`tool`,
- * "tool_choice: type \"tool\" and \"any\" are not supported for this model."). Claude Code sends thinking disabled only
+ * carrying one is not rewritten: it goes to the model it asked for (API docs, 2026-09: Opus 5.5, Sonnet 5.5 and Fable 5.x
+ * reject `thinking: {type: "disabled"}` at every effort level (Sonnet 5.5's lowest setting is `between_tools`); Opus 5.5,
+ * Sonnet 5.5 and Fable 5.1 reject `tool_choice` `any`/`tool`, "tool_choice: type \"tool\" and \"any\" are not
+ * supported for this model."). Claude Code sends thinking disabled only
  * on side calls so far (fixtures interactive.title-generation, ultracode.main-side-no-tools), which are not routed.
  */
-const REJECTS_DISABLED_THINKING: readonly string[] = ["claude-opus-5-5", "claude-fable-5"];
-const REJECTS_FORCED_TOOL_CHOICE: readonly string[] = ["claude-opus-5-5", "claude-fable-5-1"];
+const REJECTS_DISABLED_THINKING: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5"];
+const REJECTS_FORCED_TOOL_CHOICE: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"];
 const matches = (list: readonly string[], model: string): boolean => list.some((m) => model.toLowerCase().includes(m));
 
 export interface RewriteOptions {

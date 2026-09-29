@@ -4,7 +4,15 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Changed
+
+- **Sonnet 5.5 is the sonnet tier's model** (`claude-sonnet-5-5`, released 2026-09-28), in place of Sonnet 5. Its list
+  prices are Sonnet 5's, so cost estimates and the main-chat cost guard do not change. Route mode sends it only where
+  the pair was verified against the API (docs/wire-format.md §5.12): Opus 5.5 ↔ Sonnet 5.5 and Haiku ↔ Sonnet 5.5. An
+  Opus 5 or Fable request whose tier comes out as sonnet is logged `rewrite_unverified` and forwarded unchanged;
+  `REFLEX_MODEL_SONNET=claude-sonnet-5` keeps Sonnet 5 and its verified pairs.
+- Sonnet 5.5 rejects `thinking: {type: "disabled"}` and forced `tool_choice` (`any`, `tool`) like Opus 5.5, so such a
+  request is never retargeted to it (`rewrite_failed`, sent to the model it asked for).
 
 ## 0.7.0 — 2026-09-28
 

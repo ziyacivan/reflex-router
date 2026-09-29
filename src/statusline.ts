@@ -126,7 +126,7 @@ function quotaText(ws: readonly QuotaWindow[]): string | null {
 
 /**
  * Pure. The lines for one session; null prints nothing (not behind reflex, or nothing to say yet).
- *   Reflex: ⇣ Sonnet 5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Cache: 42m left (lapse Est. +$0.61) · Quota: 5h 31%, 7d 48%
+ *   Reflex: ⇣ Sonnet 5.5 (asked Opus 5.5) · Effort: ⇣ low (asked high) · Est. Cost: $1.80 · Cache: 42m left (lapse Est. +$0.61) · Quota: 5h 31%, 7d 48%
  *   ↳ List docs directory files: ⇣ Haiku 4.5 (asked Opus 5.5) · Effort: ⇣ low (asked high)
  * One line per running subagent (changed or not), titled as Claude Code shows it (else `subagent N`, by start order).
  */

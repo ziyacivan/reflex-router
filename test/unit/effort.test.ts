@@ -282,12 +282,12 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
   it("a subagent routed to Sonnet: the top-level level on its first request, kept for its loop", async () => {
     const h = harness({ REFLEX_EFFORT: "1" }, 0, tmp(), "sonnet");
     const a = await h.send(sub);
-    assert.equal(model(a.sent), "claude-sonnet-5");
+    assert.equal(model(a.sent), "claude-sonnet-5-5");
     assert.equal(top(a.sent), "low");
     assert.ok(msgs(a.sent).every((m) => m.output_config === undefined), "Sonnet takes no effort message");
     assert.equal(a.rec.effort?.via, "top-level");
     const c = await h.send(subCont);
-    assert.equal(model(c.sent), "claude-sonnet-5");
+    assert.equal(model(c.sent), "claude-sonnet-5-5");
     assert.equal(top(c.sent), "low");
   });
 
@@ -304,7 +304,7 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
 
   it("a Sonnet main chat keeps its level, even with MIDTURN (a first-turn level would hold for the whole chat)", async () => {
     const a = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1" }, 0, tmp(), "sonnet").send(newTurn);
-    assert.equal(model(a.sent), "claude-sonnet-5", "the tier routing itself is unchanged");
+    assert.equal(model(a.sent), "claude-sonnet-5-5", "the tier routing itself is unchanged");
     assert.equal(top(a.sent), "medium");
     assert.equal(a.rec.effort?.via, null);
     assert.ok(a.rec.effort?.reasons.includes("effort_sonnet_main_chat"));

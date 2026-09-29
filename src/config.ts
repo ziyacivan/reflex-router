@@ -52,7 +52,7 @@ export type UpgradePolicy = (typeof UPGRADE_POLICIES)[number];
 /** Built-in tier -> model id defaults; overridden by REFLEX_MODEL_<TIER>, then ANTHROPIC_DEFAULT_<TIER>_MODEL. */
 export const DEFAULT_MODELS: Readonly<Record<Tier, string>> = {
   haiku: "claude-haiku-4-5-20251001",
-  sonnet: "claude-sonnet-5",
+  sonnet: "claude-sonnet-5-5",
   opus: "claude-opus-5-5",
   fable: "claude-fable-5-1",
 };

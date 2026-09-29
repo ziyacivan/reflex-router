@@ -423,7 +423,7 @@ the prompt puts a puzzle before the first tool call so Fable thinks (525 thinkin
 the main continuation holding a **Fable-signed** thinking block, the pinned Opus 5.5 continuation, and un-pin to Fable
 with Fable- and Opus 5.5-signed thinking in the history: all 200. Only `model` changes.
 
-Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), and every pair between Opus 5.5 and Haiku, Sonnet or Fable (§5.7). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
+Route mode applies exactly the verified pairs: **every pair among Haiku, Sonnet, Opus 5 and Fable** (§5.1–5.6), every pair between Opus 5.5 and Haiku, Sonnet or Fable (§5.7), and Sonnet 5.5 to and from Opus 5.5 and Haiku (§5.12). Fable still needs `REFLEX_ALLOW_FABLE=1`, upgrades still need `REFLEX_UPGRADES=on` (or `confident`). Everything else is logged as `rewrite_unverified` and forwarded unchanged.
 
 Model ids observed: `claude-sonnet-5`, `claude-haiku-4-5-20251001`.
 
@@ -611,15 +611,78 @@ First request of `claude -p "Reply with the single word ok." --output-format jso
 servers connect in the background, so it varies with timing): 28,376 input tokens without reflex, 44,456 behind reflex
 0.5.5, 28,167 with the change. Runs that route mode sent to Haiku are excluded (another tokenizer).
 
-### 5.11 Shapes Opus 5.5 and Fable 5.x reject (API documentation, not measured here)
+### 5.11 Shapes Opus 5.5, Sonnet 5.5 and Fable 5.x reject (API documentation, not measured here)
 
-Per Anthropic's API documentation (2026-09): Opus 5.5 and Fable 5.x return 400 on `thinking: {"type": "disabled"}` at
-every effort level, and Opus 5.5 and Fable 5.1 on `tool_choice` `{"type": "any"}` / `{"type": "tool"}` ("tool_choice:
-type \"tool\" and \"any\" are not supported for this model."). Neither has a rewrite that keeps its meaning (turning
+Per Anthropic's API documentation (2026-09): Opus 5.5, Sonnet 5.5 and Fable 5.x return 400 on `thinking: {"type":
+"disabled"}` at every effort level (Sonnet 5.5's lowest setting is `{"type": "between_tools"}` instead), and Opus 5.5,
+Sonnet 5.5 and Fable 5.1 on `tool_choice` `{"type": "any"}` / `{"type": "tool"}` ("tool_choice: type \"tool\" and
+\"any\" are not supported for this model."). Neither has a rewrite that keeps its meaning (turning
 thinking on, or dropping the forced tool), so a request carrying one is not retargeted to those models
 (`src/wire/rewrite.ts`, `REJECTS_DISABLED_THINKING` / `REJECTS_FORCED_TOOL_CHOICE`) and goes to the model it asked for,
 recorded as `rewrite_failed`. In the captures, Claude Code sends thinking disabled only on side calls (title generation,
 `no_tools`), which reflex does not route, and never sends `tool_choice`.
+
+### 5.12 Sonnet 5.5 (experiment, 2.1.284, capped at $3.00, $2.00 and $1.50)
+
+Sonnet 5.5 (`claude-sonnet-5-5`, released 2026-09-28) is the sonnet tier's built-in model since this change. Its list
+prices are Sonnet 5's ($2 / $10 per MTok, cache reads $0.20, writes 1.25× / 2×; pricing page, 2026-09-29), so
+`src/pricing.ts` needs no row of its own; context 1M and max output 128K, as `src/tiers.ts` already has for the tier.
+Being a new model in a verified family, it was added to `UNVERIFIED_MODELS` first, and three `-p` sessions verified the
+pairs below under the user's own settings, **no override**: model setting `opus[1m]`, requested model
+`claude-opus-5-5` at effort `xhigh`, entrypoint `sdk-cli`; tools limited with `--allowedTools` to `Agent` and read-only
+`Bash` commands (`ls`, `wc`, `git log`), as in §5.2. Each subagent task put the recurrence of
+`route-experiment.mjs`'s `PUZZLE` (at n = 29) before its first tool call so that the model thinks and its signed
+thinking block is in the history of the later requests. Results:
+`test/fixtures/experiments/2.1.284/experiment.route-*sonnet55*.results.json`.
+
+**Opus 5.5 → Sonnet 5.5** (`--from opus --to sonnet --main sonnet --lean --probe-message-oc`, est. $1.03). All 200.
+
+| Probe | Status | Rewritten fields |
+| --- | --- | --- |
+| main first request → Sonnet 5.5 | 200 | `model`, `messages.tool_addition_lifted:3`, `tools.undeferred:3`, `messages.output_config_dropped:1` |
+| main first request → Sonnet 5.5, system message's `output_config` kept | **200** (Sonnet 5 answered 400, §5.7) | as above, without `output_config_dropped` |
+| subagent first request (×2) | 200 ×2 | as the main first request |
+| subagent pinned continuations, **Sonnet 5.5-signed** thinking in the history (×4) | 200 ×4 | as above |
+| subagent un-pin to Opus 5.5 with Sonnet 5.5-made turns (×2) | 200 ×2 | none (original bytes) |
+| main continuation with an **Opus 5.5 thinking block** in the history | 200 | as the first request |
+| main pinned continuation | 200 | as above |
+| main un-pin to Opus 5.5 after Sonnet 5.5 turns (2 thinking blocks) | 200 | none |
+
+The subagents' first routed requests wrote 2,194 and 2,386 output tokens (the puzzle, thought through), so the pinned
+and un-pin requests really held Sonnet 5.5-signed blocks.
+
+**Sonnet 5.5 as the source** (`--from sonnet --to haiku,opus --delay-pin --no-main-new`, est. $0.71). The Opus 5.5 main
+chat started two native Sonnet subagents through the Agent tool (`model: "sonnet"`), which Claude Code 2.1.284 sends as
+`claude-sonnet-5-5`; `--delay-pin` let each first request through, so the second one held Sonnet 5.5's own thinking.
+
+| Probe | → Haiku 4.5 | → Opus 5.5 |
+| --- | --- | --- |
+| subagent first request, no history (×2) | 200 ×2 | 200 ×2 |
+| second request, **Sonnet 5.5-signed** thinking in the history (×2) | 200 ×2 | 200 ×2 |
+| pinned continuations | 200 ×4 | 200 |
+| un-pin to Sonnet 5.5 with target-made turns | 200 | 200 |
+
+Only `model` changes for → Opus 5.5; → Haiku gets the usual rewrite (`max_tokens`, `output_config.effort`,
+`thinking`, `messages.system_folded`).
+
+**Haiku → Sonnet 5.5** (`--from haiku --to sonnet --delay-pin --no-main-new`, est. $0.38), a native Haiku subagent
+(`model: "haiku"`): first request without history, the second holding a **Haiku-signed** thinking block, the pinned
+Sonnet 5.5 continuation, and un-pin to Haiku with Sonnet 5.5-made thinking: all 200. `model` and `thinking` (budget →
+adaptive) change.
+
+**What this settles.** Opus 5.5 ↔ Sonnet 5.5, Sonnet 5.5 ↔ Haiku: **verified and applied** (`VERIFIED_MODEL_RETARGETS`).
+Per Anthropic's documentation, Sonnet 5.5 reads Haiku 4.5's and Sonnet 5's thinking but not Opus 5.x's or Fable's, and
+no other model reads Sonnet 5.5's; an unreadable block is dropped by the API before the model sees it, unbilled, and the
+request succeeds. That matches every 200 above; the Haiku subagent pinned after a Sonnet 5.5 turn wrote 2,574 output
+tokens on its first Haiku request, consistent with the puzzle being worked out again.
+
+**What it does not.** Opus 5 ↔ Sonnet 5.5 and Fable ↔ Sonnet 5.5 were not sent, so they stay `rewrite_unverified`
+(forwarded unchanged); `REFLEX_MODEL_SONNET=claude-sonnet-5` keeps the Sonnet 5 pairs of §5.1–5.7. No main chat ran on
+Sonnet 5.5 as the source, and no run was interactive. These runs did not opt into the history-editing check
+(`thinking.block_binding`); accounts created on or after 2026-08-31 have it enforced by default and were not tested. The
+tables that decide what a rewrite keeps are per tier and still hold Sonnet 5's answers: Sonnet 5.5 accepted the kept
+per-turn `output_config` above, and its documentation lists mid-conversation tool changes too, but `retarget` still drops
+the one and lifts the other for any Sonnet. Both were accepted that way; keeping them for Sonnet 5.5 is a separate change.
 
 ## 6. Responses
 

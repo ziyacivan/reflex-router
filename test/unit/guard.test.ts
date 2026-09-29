@@ -104,4 +104,16 @@ describe("verified retargets", () => {
     assert.equal(isVerifiedRetarget("fable", "opus", M.fable, "claude-opus-5-5"), true);
     assert.equal(isVerifiedRetarget("opus", "opus", "claude-opus-5-5", "claude-opus-5-5"), false);
   });
+
+  it("Sonnet 5.5 to and from Opus 5.5 and Haiku is verified; with Opus 5 or Fable it is not (never sent)", () => {
+    const S55 = "claude-sonnet-5-5";
+    assert.equal(isVerifiedRetarget("opus", "sonnet", "claude-opus-5-5[1m]", S55), true);
+    assert.equal(isVerifiedRetarget("sonnet", "opus", S55, "claude-opus-5-5"), true);
+    assert.equal(isVerifiedRetarget("sonnet", "haiku", S55, M.haiku), true);
+    assert.equal(isVerifiedRetarget("haiku", "sonnet", M.haiku, S55), true);
+    assert.equal(isVerifiedRetarget("opus", "sonnet", M.opus, S55), false);
+    assert.equal(isVerifiedRetarget("sonnet", "opus", S55, M.opus), false);
+    assert.equal(isVerifiedRetarget("fable", "sonnet", M.fable, S55), false);
+    assert.equal(isVerifiedRetarget("sonnet", "fable", S55, M.fable), false);
+  });
 });

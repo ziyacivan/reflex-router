@@ -16,7 +16,7 @@ export interface TierPrice {
   readonly cacheReadMult: number;
 }
 
-/** Claude Haiku 4.5, Sonnet 5, Opus 5.5, Fable 5.1 (the tier defaults in config.ts). */
+/** Claude Haiku 4.5, Sonnet 5.5, Opus 5.5, Fable 5.1 (the tier defaults in config.ts). Sonnet 5 has the same prices. */
 export const PRICES: Readonly<Record<Tier, TierPrice>> = {
   haiku: { input: 1, output: 5, cacheReadMult: 0.1 },
   sonnet: { input: 2, output: 10, cacheReadMult: 0.1 },

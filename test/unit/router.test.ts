@@ -34,9 +34,16 @@ function opusRequest(name: string, sid: string, prefix = "", model = "claude-opu
   return { ...f, headers: { ...f.headers, "x-claude-code-session-id": sid }, body: Buffer.from(JSON.stringify(b)) };
 }
 
-function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number, resHeaders?: Record<string, string>): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
+/**
+ * The interactive fixtures are Opus 5 requests, and Opus 5 -> Sonnet 5 is the pair their rules were verified on; Opus 5
+ * -> Sonnet 5.5 (the built-in sonnet model) never was, so by default the harness runs with Sonnet 5 as the sonnet tier.
+ * `{}` runs it on the built-in models.
+ */
+const SONNET_5 = { REFLEX_MODEL_SONNET: "claude-sonnet-5" };
+
+function harness(onQuota?: RouterDeps["onQuota"], env: Record<string, string> = SONNET_5): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number, resHeaders?: Record<string, string>): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reflex-router-"));
-  const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50" });
+  const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50", ...env });
   assert.ok(loaded.ok);
   const config: Config = loaded.config;
   let answer: Answer | null = null;
@@ -223,6 +230,23 @@ describe("router: main-chat pin rules (session B)", () => {
     assert.equal(r.rec.forwarded.rewritten, true);
     const c = await h.send(opusRequest("main-continuation", "U", "", "claude-opus-5-5"), null);
     assert.equal(c.sent["model"], "claude-sonnet-5");
+  });
+
+  it("an Opus 5.5 main chat is routed to Sonnet 5.5, the built-in sonnet model (a verified pair); its continuation follows", async () => {
+    const h = harness(undefined, {});
+    const r = await h.send(opusRequest("main-new-turn", "V", "", "claude-opus-5-5"), SONNETISH);
+    assert.equal(r.sent["model"], "claude-sonnet-5-5");
+    assert.ok(!r.rec.plan?.reasons.includes("rewrite_unverified"));
+    assert.equal(r.rec.forwarded.rewritten, true);
+    const c = await h.send(opusRequest("main-continuation", "V", "", "claude-opus-5-5"), null);
+    assert.equal(c.sent["model"], "claude-sonnet-5-5");
+  });
+
+  it("an Opus 5 request is not rewritten to Sonnet 5.5 (a pair never verified): it goes to the model it asked for", async () => {
+    const h = harness(undefined, {});
+    const r = await h.send(opusRequest("main-new-turn", "W"), SONNETISH);
+    assert.equal(r.sent["model"], "claude-opus-5");
+    assert.ok(r.rec.plan?.reasons.includes("rewrite_unverified"));
   });
 });
 
