@@ -809,3 +809,42 @@ not control. No interactive session and no subagent (75 subagent conversations) 
 *Why it can happen:* history-only anchors cannot tell "the same conversation resumed" from "a new conversation with
 the same first message". Interactive first messages carry the date, CLAUDE.md and the typed prompt, so a collision
 needs the same first prompt in the same project on the same day; scripted `-p` repeats hit it every time.
+
+## 2026-09-30 — TypeLLM as a decision backend: agrees with Jev on 93% of the pilot tasks at similar latency
+
+**Setup.** TypeLLM (`typellm-latest`, hosted, `POST https://api.typellm.ai/v1/generate`; context + typed questions,
+`return_probabilities` on enum/boolean fields), through an adapter (now `src/backend/typellm.ts`, same translation, pinned by `test/unit/typellm.test.ts`): a `choice` question becomes a
+string enum with the criteria flattened into `instructions`, a `score` becomes an enum `"0".."4"` whose expected value is
+the score, a `noul` becomes a boolean. The context is the decision state as JSON. The 500 synthetic pilot tasks, with
+the Jev `jev-1.13.0` labels already on disk (`ft/labelled.jsonl`, no new Jev calls). Three runs: A the product's two
+questions, one at a time; B those plus the seven `lf-1` feature questions, one at a time; C as A with `permutations`
+on the tier question, four at a time. Laya `english` (the default checkpoint, shipped head `cal-*`) was run on the same
+500 tasks on the same machine (M4, CPU). Plans are `mass` eps 0.10 with Opus requested, as in `fit.ts`. Cost cap $1;
+spent $0.063 (1.26M input tokens, no thinking, TypeLLM list price $0.05/M).
+
+**Result.**
+
+| | agrees with Jev (plan) | cheaper than Jev | dearer than Jev | Jev-haiku sent to haiku | cross-entropy |
+| --- | --- | --- | --- | --- | --- |
+| TypeLLM raw, 2 questions (A, n = 479) | 93.3% | 0.4% | 6.3% | 103/120 | 0.44 |
+| TypeLLM raw, 9 questions (B) | 93.4% | 0.2% | 6.4% | 101/120 | 0.44 |
+| TypeLLM + head, cross-validated (B) | 94.6% | 1.2% | 4.2% | 111/120 | 0.39 |
+| TypeLLM, tier permutations (C, n = 494) | 74.9% | 0 | 25.1% | 82/118 | 0.46 |
+| Laya `english` + shipped head | 58.2% | 4.4% | 37.4% | 6/120 | 0.92 |
+| Laya `english` + head refitted here, cross-validated | 48.2% | 1.2% | 50.6% | 1/120 | 0.82 |
+| always Sonnet | 41.0% | 35.0% | 24.0% | 0/120 | — |
+
+Latency (client wall time, from this machine, fresh `fetch` per call): A p50/p95 382/464 ms (server `elapsed` 183/226),
+2 of 500 over 1,500 ms; B 440/500 ms. For reference Jev in the owner's real sessions (1,315 decisions, keep-alive) is
+p50/p95 353/792 ms; Laya `english` here 839/1,589 ms. Errors: 21 × HTTP 502 `upstream_error` in A, all within one
+~45-call window (a short outage, not spread out); none in B; 6 × 429 `rate_limit_exceeded` in C at four concurrent
+calls (the documented limit is 100 requests/min plus a concurrency cap). Permutations changed the tier argmax on 22/473
+tasks but moved enough mass onto Opus to change a quarter of the plans, all towards dearer.
+
+**What it means.** On these tasks TypeLLM reproduces Jev's tier judgement closely, raw, with no head, which neither
+Laya nor Julia did. The agreement is high enough to suggest a closely related model rather than an independent judge;
+that is not known. Jev is the teacher here, not ground truth, and Jev's own repeat agreement on this set was not
+measured, so 93% may be near the ceiling. Permutations show the plain answer leans cheap with the options listed
+cheapest first, and Jev's labels lean the same way. *Conditions:* synthetic English tasks, one machine, one day, a
+thin adapter written by us, no real prompts sent. *Open:* real traffic (the owner's prompts were not sent to a new
+provider), 502 frequency over longer periods, and a keep-alive client's latency.
