@@ -6,6 +6,30 @@
 
 _Nothing yet._
 
+## 0.9.0 — 2026-09-30
+
+### Added
+
+- **TypeLLM as a decision backend** (`REFLEX_BACKEND=typellm`, key in `TYPELLM_API_KEY`). reflex sends the same
+  privacy-budgeted state as JSON text and reshapes its fixed questions into TypeLLM's typed ones (enums and a boolean,
+  each with `return_probabilities`); the answers come back as the probabilities the policy already reads, with no
+  calibration head. On 500 synthetic tasks its plans matched Jev's on 93% (0.4% cheaper than Jev's), p95 latency
+  464 ms from one machine; Laya with its shipped head matched on 58% of the same tasks
+  ([measurement](docs/observations.md#2026-09-30--typellm-as-a-decision-backend-agrees-with-jev-on-93-of-the-pilot-tasks-at-similar-latency)).
+  Not yet measured on real sessions. Settings: `REFLEX_TYPELLM_BASE_URL` (a self-hosted server works in principle,
+  untested), `REFLEX_TYPELLM_MODEL` (`typellm-latest`), `REFLEX_TYPELLM_DEADLINE_MS` (1500).
+- The TypeLLM key is handled like the TypeSafe one: it may live in `~/.reflex/env` (a group-readable file holding it
+  is refused), `reflex doctor` never prints it, every `TYPELLM_*` variable is stripped from the environment `claude`
+  gets, and a `tl-sk-…` key pasted into a prompt is redacted before the state leaves the machine.
+
+### Changed
+
+- `REFLEX_COMPARE=laya` only runs next to Jev; with another backend it is ignored with a warning (it used to start
+  `laya-serve` for nothing).
+- Internal: Jev's keep-alive transport (deadline, stale-socket retry) is shared by every remote backend
+  (`src/backend/http-client.ts`). No behaviour change.
+- Pricing re-verified against Anthropic's pricing page (2026-09-30); no price changed.
+
 ## 0.8.2 — 2026-09-29
 
 ### Fixed
