@@ -70,9 +70,55 @@ reflex doctor
 
 Uncalibrated, Laya keeps Opus for everything; reflex ships a calibration head fitted to reproduce Jev's decisions, with a safety margin towards Opus. It is conservative and less accurate than Jev: on 190 real prompts it moved 24 turns off Opus (Jev moved about half of them), and 1.6% of its plans were cheaper than Jev's ([measurement](docs/observations.md#2026-09-23--the-shipped-laya-head-tested-on-190-real-prompts-15-cheaper-than-jev-refit-with-a-safety-margin), [details](docs/reference.md#laya-decisions-on-this-machine)).
 
-`~/.reflex/env` holds `KEY=value` lines for `REFLEX_*` settings and a backend key. It is merged **under** your environment (the environment wins), and a file that holds the key but is readable by group or others is refused: reflex warns, ignores the file, and runs plain `claude`. `reflex doctor` says why.
+### The settings file: `~/.reflex/env`
 
-**Start in shadow mode, and look before you route:**
+Every setting can be an environment variable, but a file keeps them across shells. reflex reads **`~/.reflex/env`**
+(`$REFLEX_HOME/env` if you set `REFLEX_HOME`). It does **not** read a `.env` in your project or in this repository.
+
+```sh
+mkdir -p ~/.reflex
+touch ~/.reflex/env && chmod 600 ~/.reflex/env   # required once it holds a key
+$EDITOR ~/.reflex/env
+reflex doctor                                    # shows each setting and whether it came from the file or the environment
+```
+
+An example, with one backend chosen (comments are fine):
+
+```sh
+# Decision backend: jev (default), typellm or laya
+REFLEX_BACKEND=typellm
+
+# The key for that backend (only the chosen backend's key is used)
+TYPELLM_API_KEY=tl-sk-...
+# TYPESAFE_API_KEY=apikey_...      # for REFLEX_BACKEND=jev
+#                                  # laya needs no key
+
+# shadow (default) records what it would do; route applies it; off is plain claude
+REFLEX_MODE=shadow
+
+# Optional
+# REFLEX_MAIN_CHAT=never           # route subagent work only, leave the main chat alone
+# REFLEX_TIERS=haiku,sonnet,opus   # tiers reflex may send work to
+# REFLEX_STATUSLINE=0              # no status line
+```
+
+The rules:
+
+- One `KEY=value` per line. `#` starts a comment, `export ` in front is accepted, and a value may be wrapped in single or
+  double quotes. Nothing is expanded (`$HOME` stays literally `$HOME`). An empty value means "not set".
+- Only `REFLEX_*`, `TYPESAFE_API_KEY` and `TYPELLM_API_KEY` are read. Anything else (an Anthropic key, `PATH`, …) is
+  ignored with a warning: the file is never a way to give reflex your Claude credentials. `REFLEX_HOME` cannot be set
+  here, since it says where the file is.
+- The file sits **under** your environment: a variable already set (non-empty) in the shell wins, so
+  `REFLEX_MODE=route reflex` overrides the file for one run.
+- A file holding a key must be readable by you alone (`chmod 600`). If group or others can read it, reflex refuses the
+  whole file, warns, and runs plain `claude` until it is fixed; `reflex doctor` says so. (Not checked on Windows.)
+- Keys are never printed (`doctor` shows `(set, not shown)`) and never reach `claude`: every `REFLEX_*`, `TYPESAFE_*` and
+  `TYPELLM_*` variable is removed from the environment it runs with.
+
+Every setting, its values and its default: [docs/reference.md](docs/reference.md).
+
+### Start in shadow mode, and look before you route
 
 1. `reflex` (everything you type after it goes to `claude` untouched). The default mode is `shadow`: nothing about your session changes, and `~/.reflex/decisions.jsonl` fills up.
 2. Work as usual for a few sessions, then `reflex report` (`--since 2h`, `--usd`). Read section 3, "shadow vs actual": what reflex *would* have routed where.
