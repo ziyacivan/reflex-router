@@ -1,5 +1,4 @@
 // Replaying captured fixtures through a running stack and reading back decisions.jsonl.
-import fs from "node:fs";
 import type http from "node:http";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -7,6 +6,7 @@ import type { UpstreamHandler } from "./fake-upstream.js";
 import type { Fixture } from "./fixtures.js";
 import { request, waitFor } from "./http.js";
 import type { Stack } from "./stack.js";
+import { completeJsonl } from "./jsonl.js";
 
 export const SSE = [
   'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":1}}}',
@@ -40,13 +40,7 @@ export type Rec = Record<string, unknown> & {
  * `JSON + "\n"` while tests read, so whatever follows the last newline may be a line still being written: it is
  * skipped now and seen on a later poll.
  */
-export const allRecords = (stack: Stack): Record<string, unknown>[] => {
-  const f = path.join(stack.config.home, "decisions.jsonl");
-  if (!fs.existsSync(f)) return [];
-  const lines = fs.readFileSync(f, "utf8").split("\n");
-  lines.pop();
-  return lines.filter((l) => l.trim() !== "").map((l) => JSON.parse(l) as Record<string, unknown>);
-};
+export const allRecords = (stack: Stack): Record<string, unknown>[] => completeJsonl(path.join(stack.config.home, "decisions.jsonl"));
 /** Decision records only. */
 export const records = (stack: Stack): Rec[] => allRecords(stack).filter((r) => r["record"] === "decision") as Rec[];
 export const requestHeaders = (fx: Fixture): http.OutgoingHttpHeaders => {

@@ -16,6 +16,7 @@ import { Router } from "../../src/worker/router.js";
 import { effortVia, messageEffort, withEffort, withTopEffort, type EffortMark } from "../../src/wire/effort.js";
 import { loadFixtures } from "../support/fixtures.js";
 import { waitFor } from "../support/http.js";
+import { completeJsonl } from "../support/jsonl.js";
 
 type Json = Record<string, unknown>;
 type Msg = { role: string; content: unknown; output_config?: { effort: string } };
@@ -196,7 +197,7 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     const log = new DecisionLog(home, false);
     const store = EffortStore.at(home, () => undefined);
     const router = new Router({ config: loaded.config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.280", backend, breaker: new Breaker(), log, logger: () => undefined, effortStore: store, random: () => random });
-    const records = (): DecisionRecord[] => (fs.existsSync(log.file) ? fs.readFileSync(log.file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as DecisionRecord) : []);
+    const records = (): DecisionRecord[] => completeJsonl<DecisionRecord>(log.file);
     return {
       home,
       router,

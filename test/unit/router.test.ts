@@ -14,6 +14,7 @@ import { Breaker } from "../../src/worker/breaker.js";
 import { Router, type RouterDeps } from "../../src/worker/router.js";
 import { loadFixtures, type Fixture } from "../support/fixtures.js";
 import { waitFor } from "../support/http.js";
+import { completeJsonl } from "../support/jsonl.js";
 
 type Json = Record<string, unknown>;
 type Answer = Record<string, number> | "timeout" | "hang";
@@ -66,7 +67,7 @@ function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: A
   };
   const log = new DecisionLog(home, false);
   const router = new Router({ config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.277", backend, breaker: new Breaker(), log, logger: () => undefined, ...(onQuota ? { onQuota } : {}) });
-  const records = (): DecisionRecord[] => (fs.existsSync(log.file) ? fs.readFileSync(log.file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as DecisionRecord) : []);
+  const records = (): DecisionRecord[] => completeJsonl<DecisionRecord>(log.file);
   return {
     calls: () => calls,
     async send(fx, a, cacheCreate = 60_000, resHeaders = {}, delta = { stop_reason: "end_turn" }) {
