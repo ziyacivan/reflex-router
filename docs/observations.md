@@ -790,3 +790,22 @@ day the pin sent Claude Code's resend back to Sonnet 5.5 (5 of 7 runs exited 1);
 which then refused it (2 runs) or a later request of the turn (1 run): 3 of 4 sessions still failed. The resend carries
 Claude Code's "stopped by a safety classifier" note. The fix restores Claude Code's own recovery but cannot undo the
 refusal. None of the 100 coding-task runs was refused.
+
+## 2026-09-29: cross-session leak check (decisions.jsonl, effort.jsonl)
+
+Checked every conversation's first request (1,070 conversations, 6,044 decisions, 2026-09-24 → 09-29) for state it
+could only have got from another session. **Pins, escalations, model notices, typed prompts:** none; every `conv` id
+carries its own session prefix, no conversation starts on a pin `hit`, and the rest is in-memory per session id.
+
+**Effort marks: 7 leaks.** `effort.jsonl` is keyed by the hash of the message history alone, on purpose (a resumed
+conversation gets its marks back). Seven `sdk-cli` sessions made a single request whose first message was
+byte-identical to that of another single-request session started 7–15 s earlier (repeat `-p` runs of one prompt:
+same input size ±14 tokens, so not a `--continue`). The earlier run's `set` on message 0 was re-applied to the later,
+independent one (`messages.effort_reinserted:1` on its first request). Six of the seven had picked the same level
+(`medium`) on their own. One, `a4669ad7597aa6fa` (2026-09-25 10:35), was an `REFLEX_AB` **control**: it was sent
+`medium` from the other run's mark and then had `high` inserted after it, so that control data point is treated,
+not control. No interactive session and no subagent (75 subagent conversations) was affected.
+
+*Why it can happen:* history-only anchors cannot tell "the same conversation resumed" from "a new conversation with
+the same first message". Interactive first messages carry the date, CLAUDE.md and the typed prompt, so a collision
+needs the same first prompt in the same project on the same day; scripted `-p` repeats hit it every time.
