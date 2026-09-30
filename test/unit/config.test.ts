@@ -94,6 +94,36 @@ describe("loadConfig", () => {
     assert.doesNotMatch(warnings.join(), /sk-ant-secret-value/);
   });
 
+  it("typellm: its key (trimmed, tl-sk- prefix), base URL, model and deadline", () => {
+    const d = load({ REFLEX_BACKEND: "TypeLLM" }).config;
+    assert.equal(d.backend, "typellm");
+    assert.equal(d.typellmApiKey, undefined);
+    assert.equal(d.typellmBaseUrl, "https://api.typellm.ai");
+    assert.equal(d.typellmModel, "typellm-latest");
+    assert.equal(d.typellmDeadlineMs, 1500);
+    const c = load({ TYPELLM_API_KEY: "  tl-sk-abc123  ", REFLEX_TYPELLM_BASE_URL: "http://127.0.0.1:30000/", REFLEX_TYPELLM_MODEL: "Qwen/Qwen3.8-27B", REFLEX_TYPELLM_DEADLINE_MS: "2500" }).config;
+    assert.equal(c.typellmApiKey, "tl-sk-abc123");
+    assert.equal(c.typellmBaseUrl, "http://127.0.0.1:30000");
+    assert.equal(c.typellmModel, "Qwen/Qwen3.8-27B");
+    assert.equal(c.typellmDeadlineMs, 2500);
+    assert.match(errors({ REFLEX_TYPELLM_BASE_URL: "ftp://x" }).join(), /REFLEX_TYPELLM_BASE_URL/);
+    assert.match(errors({ REFLEX_TYPELLM_MODEL: "has space" }).join(), /REFLEX_TYPELLM_MODEL/);
+  });
+
+  it("ignores a TypeLLM key without the tl-sk- prefix, warns, and never echoes the value", () => {
+    const { config, warnings } = load({ TYPELLM_API_KEY: "apikey_secret-value" });
+    assert.equal(config.typellmApiKey, undefined);
+    assert.equal(warnings.length, 1);
+    assert.doesNotMatch(warnings.join(), /secret-value/);
+  });
+
+  it("REFLEX_COMPARE only runs next to Jev: with another backend it is dropped with a warning", () => {
+    const { config, warnings } = load({ REFLEX_BACKEND: "typellm", REFLEX_COMPARE: "laya" });
+    assert.equal(config.compare, "off");
+    assert.match(warnings.join(), /REFLEX_COMPARE=laya/);
+    assert.equal(load({ REFLEX_COMPARE: "laya" }).config.compare, "laya");
+  });
+
   it("reads REFLEX_HOME, REFLEX_CLAUDE_BIN and the version-check switch", () => {
     const { config } = load({ REFLEX_HOME: "/data/rf", REFLEX_CLAUDE_BIN: "/opt/claude", REFLEX_IGNORE_VERSION_CHECK: "1" });
     assert.equal(config.home, "/data/rf");
@@ -108,8 +138,8 @@ describe("loadConfig", () => {
 });
 
 describe("isReflexEnvName", () => {
-  it("matches reflex settings and every TypeSafe credential, nothing else", () => {
-    for (const n of ["REFLEX_MODE", "REFLEX_ANYTHING", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL"]) assert.equal(isReflexEnvName(n), true, n);
+  it("matches reflex settings and every TypeSafe and TypeLLM credential, nothing else", () => {
+    for (const n of ["REFLEX_MODE", "REFLEX_ANYTHING", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPELLM_API_KEY", "TYPELLM_ANYTHING"]) assert.equal(isReflexEnvName(n), true, n);
     for (const n of ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_X", "PATH", "reflex_mode"]) assert.equal(isReflexEnvName(n), false, n);
   });
 });

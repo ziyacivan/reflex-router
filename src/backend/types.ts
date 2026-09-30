@@ -2,7 +2,7 @@ import type { Decision, DecisionState, QuestionSet } from "../types.js";
 
 /** A decision backend. It never sees a request, only the budgeted, redacted DecisionState. */
 export interface DecisionBackend {
-  readonly id: "jev" | "laya";
+  readonly id: "jev" | "laya" | "typellm";
   /** Resolves with validated answers or rejects with a BackendError; never retries. */
   decide(state: DecisionState, questions: QuestionSet, opts: { readonly signal: AbortSignal }): Promise<Decision>;
   /** Opens a connection ahead of the first decision (best effort). */

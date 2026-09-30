@@ -26,7 +26,7 @@ export function versionCommand(io: Pick<LaunchIO, "stderr"> & { stdout: (t: stri
 
 /** A setting's value as doctor shows it: never the key, and URLs without credentials or query. */
 function shownValue(name: string, value: string): string {
-  if (name === "TYPESAFE_API_KEY") return "(set, not shown)";
+  if (name === "TYPESAFE_API_KEY" || name === "TYPELLM_API_KEY") return "(set, not shown)";
   if (name.endsWith("_URL")) {
     try {
       const u = new URL(value);
@@ -87,6 +87,9 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
     out(`backend:         laya, started by reflex on 127.0.0.1, offline (model ${c.layaModel}; no TypeSafe key used)`);
     out(`laya-serve:      ${layaBin ? layaBin.path : 'NOT FOUND - install it with `uv tool install "laya[serve]"` or set REFLEX_LAYA_BIN; sessions run plain claude until then'}`);
     out(`laya weights:    ${cached ? `in ${hub}` : `NOT in ${hub} - fetch them once with \`hf download convaiinnovations/laya\` (reflex runs laya-serve offline)`}`);
+  } else if (c.backend === "typellm") {
+    out(`backend:         typellm (key ${c.typellmApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"}; TYPELLM_API_KEY)`);
+    out(`typellm:         ${new URL(c.typellmBaseUrl).origin}, model ${c.typellmModel}. The model that answered is recorded per decision (backend_version)`);
   } else {
     out(`backend:         ${c.backend} (key ${c.typesafeApiKey ? "present" : merged.state === "refused" ? "missing: the env file was refused (see above)" : "missing"})`);
     const pinned = c.jevModel === DEFAULT_JEV_MODEL;

@@ -1,4 +1,4 @@
-// ~/.reflex/env: a KEY=value file for REFLEX_* settings and TYPESAFE_API_KEY, merged UNDER the process environment
+// ~/.reflex/env: a KEY=value file for REFLEX_* settings and the decision-backend keys, merged UNDER the process environment
 // (a value already in the process environment wins). This module only reads, parses and permission-checks the file;
 // what a setting means is decided by src/config.ts. It never logs a value, and a file it cannot use is skipped with a
 // warning: the session then runs on the process environment alone (fail-open).
@@ -10,8 +10,9 @@ import { defaultHome } from "./config.js";
 export const ENV_FILE_NAME = "env";
 
 /** The names the file may set. Anything else (Anthropic credentials, PATH, ...) is ignored: the file is reflex's, not the shell's. */
-const ALLOWED_NAME = /^(REFLEX_[A-Z0-9_]+|TYPESAFE_API_KEY)$/;
-const SECRET_NAME = "TYPESAFE_API_KEY";
+const ALLOWED_NAME = /^(REFLEX_[A-Z0-9_]+|TYPESAFE_API_KEY|TYPELLM_API_KEY)$/;
+/** The decision-backend keys: a file holding either must not be readable by group or others. */
+const SECRET_NAMES = ["TYPESAFE_API_KEY", "TYPELLM_API_KEY"] as const;
 
 export interface ParsedEnvFile {
   readonly values: Readonly<Record<string, string>>;
@@ -116,11 +117,12 @@ export function mergeEnvFile(processEnv: NodeJS.ProcessEnv, io: EnvFileIO = real
   const parsed = parseEnvFile(text);
   const warnings: string[] = [];
   if (parsed.malformedLines.length > 0) warnings.push(`${file}: ignoring line(s) ${parsed.malformedLines.join(", ")} (not KEY=value)`);
-  if (parsed.ignored.length > 0) warnings.push(`${file}: ignoring ${parsed.ignored.join(", ")} (only REFLEX_* and ${SECRET_NAME} are read from it)`);
+  if (parsed.ignored.length > 0) warnings.push(`${file}: ignoring ${parsed.ignored.join(", ")} (only REFLEX_* and ${SECRET_NAMES.join(", ")} are read from it)`);
 
   // A key file anyone else on the machine can read is refused whole: none of its values are used.
-  if (!blank(parsed.values[SECRET_NAME]) && io.platform !== "win32" && (st.mode & 0o077) !== 0) {
-    const reason = `it holds ${SECRET_NAME} but is readable by group/others (mode ${modeText(st.mode)}); run: chmod 600 ${file}`;
+  const secret = SECRET_NAMES.find((n) => !blank(parsed.values[n]));
+  if (secret !== undefined && io.platform !== "win32" && (st.mode & 0o077) !== 0) {
+    const reason = `it holds ${secret} but is readable by group/others (mode ${modeText(st.mode)}); run: chmod 600 ${file}`;
     return result("refused", { reason, warnings: [...warnings, `refusing ${file}: ${reason}`] });
   }
 

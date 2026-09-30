@@ -22,6 +22,11 @@ describe("resolveEffectiveMode", () => {
     }
   });
 
+  it("typellm needs its own key, not the TypeSafe one", () => {
+    assert.deepEqual(resolveEffectiveMode(cfg({ backend: "typellm", typellmApiKey: undefined }), null), { mode: "passthrough", degradedReason: "no_backend_key" });
+    assert.deepEqual(resolveEffectiveMode(cfg({ backend: "typellm", typellmApiKey: "tl-sk-x", typesafeApiKey: undefined }), null), { mode: "route", degradedReason: null });
+  });
+
   it("laya needs no TypeSafe key", () => {
     assert.deepEqual(resolveEffectiveMode(cfg({ backend: "laya", typesafeApiKey: undefined }), null), { mode: "route", degradedReason: null });
   });

@@ -1,13 +1,13 @@
 # CLAUDE.md
 
-reflex-router: a CLI (`reflex`) that runs the real `claude` behind a loopback proxy and, as decision-making lands, routes work to the cheapest adequate model using a fast decision backend (TypeSafe's Jev, or Laya run locally by the launcher). TypeScript (strict), Node 20+, ESM, zero runtime dependencies.
+reflex-router: a CLI (`reflex`) that runs the real `claude` behind a loopback proxy and, as decision-making lands, routes work to the cheapest adequate model using a fast decision backend (TypeSafe's Jev, TypeLLM, or Laya run locally by the launcher). TypeScript (strict), Node 20+, ESM, zero runtime dependencies.
 
 ## Commands
 
 ```sh
 npm test                                   # typecheck + eslint + all offline tests (must pass before every commit)
 node scripts/run-tests.mjs <substring>     # run only test files whose path contains <substring>, e.g. `unit/version`
-npm run test:live                          # tests needing a real TYPESAFE_API_KEY; skip themselves without one
+npm run test:live                          # tests needing a real TYPESAFE_API_KEY / TYPELLM_API_KEY; each skips itself without its key
 npm run build                              # tsc -> dist/
 npm run gen:versions                       # regenerate src/wire/tested-versions.generated.ts from test/fixtures/claude-code/*
 node bin/reflex.js doctor                  # run the built CLI (after `npm run build`); shows where each setting came from
@@ -36,7 +36,7 @@ src/delegate/ REFLEX_DELEGATE: the hint text + version (hint.ts, the only place 
 src/worker/escalation.ts REFLEX_ESCALATE: the tier arithmetic and the decay of an escalation; the tracker hands signals to the router through TrackerDeps.onSignal
 src/wire/effort.ts + src/worker/effort-store.ts  REFLEX_EFFORT: the level by message (Opus 5.5 also top-level; Opus 5, Fable message only) or top-level (Sonnet, where its cache is rewritten anyway). Default: subagents only, by `set` on the first request's own effort-bearing system message (binding-safe). The main chat needs REFLEX_EFFORT_MIDTURN: `set` on its first turn, `insert` (appended message; ties the conversation to reflex) on later ones. Every mark is re-applied by history hash forever, whatever the setting
 src/net/      shared forwarding (header sanitising, streaming relay); the only place that talks HTTP upstream
-src/backend/  decision backends: jev.ts (the Jev wire client, also used for laya-serve), laya.ts + laya-calibration.ts (feature questions and the fitted head; a feature change bumps FEATURE_VERSION and needs a refit)
+src/backend/  decision backends over one keep-alive transport (http-client.ts): jev.ts (the Jev wire client, also used for laya-serve), typellm.ts (REFLEX_BACKEND=typellm: translates the System One questions to TypeLLM's typed questions and back; the translation text is what was measured, test/unit/typellm.test.ts pins it), laya.ts + laya-calibration.ts (feature questions and the fitted head; a feature change bumps FEATURE_VERSION and needs a refit)
 src/config.ts the ONLY interpreter of settings (and of process.env); src/env-file.ts only reads/permission-checks ~/.reflex/env and merges it under the process env
 src/report/   `reflex report`: tolerant JSONL reader, pure sections 0-15 (0 = workflow profile, 11 = side-call fingerprints, 12 = side-call routing estimate, 13 = escalations, 14 = effort, 15 = quota exchange rate), no network
 src/report/share.ts  `reflex share`: the ALLOW-LIST of fields a shared log may contain. Adding a field to the decision record does NOT add it here; that is deliberate and test/unit/share.test.ts pins it
@@ -48,12 +48,12 @@ Details of what Claude Code sends, with evidence: `docs/wire-format.md`. Redacte
 ## Rules (do not break)
 
 - **Fail-open.** Any error, timeout or unexpected input must end in forwarding the request unchanged, never in a failed Claude Code session. Fallbacks use the model the client asked for, never a fixed tier.
-- **Credentials.** Never read, store, log or modify the user's Anthropic credentials; forward auth headers untouched. `TYPESAFE_API_KEY` and all `REFLEX_*`/`TYPESAFE_*` variables are stripped from the environment given to `claude`. Never send the TypeSafe key to Anthropic.
+- **Credentials.** Never read, store, log or modify the user's Anthropic credentials; forward auth headers untouched. `TYPESAFE_API_KEY`, `TYPELLM_API_KEY` and all `REFLEX_*`/`TYPESAFE_*`/`TYPELLM_*` variables are stripped from the environment given to `claude`. A backend key goes only to its own backend: never to Anthropic, never to another backend.
 - **Wire format is unstable.** Isolate everything that depends on Claude Code's request/response shapes in `src/wire/`. Treat the Claude Code version as a hint only; verify shape at runtime.
 - **Byte-identical passthrough** unless a rewrite is deliberately applied; never re-serialise a body that did not change.
 - **Loopback only**, and never edit the user's `~/.claude/settings.json`.
 - **No unmeasured claims** (cost, speed, quality) in README or docs. Dollar figures are list-price estimates over recorded token counts and must say so.
-- **No telemetry, ever.** reflex opens exactly two kinds of connection: Anthropic (the user's own session) and the decision backend (one question per start of work): TypeSafe Jev, or with `REFLEX_BACKEND=laya` the loopback `laya-serve` the launcher starts with `HF_HUB_OFFLINE=1`. `reflex share` writes a file and never uploads it. A field reaches a shared log only by being named in `src/report/share.ts`.
+- **No telemetry, ever.** reflex opens exactly two kinds of connection: Anthropic (the user's own session) and the ONE decision backend the user chose with `REFLEX_BACKEND` (one question per start of work): TypeSafe Jev (default), TypeLLM (`typellm`, hosted or a self-hosted `REFLEX_TYPELLM_BASE_URL`), or the loopback `laya-serve` the launcher starts with `HF_HUB_OFFLINE=1` (`laya`). A session never talks to a backend it was not configured for; `REFLEX_COMPARE=laya` adds only the loopback `laya-serve`, next to Jev. A new backend is added only as another value of `REFLEX_BACKEND`, with its measurement against Jev in `docs/observations.md`. `reflex share` writes a file and never uploads it. A field reaches a shared log only by being named in `src/report/share.ts`.
 - **Pricing** lives in `src/pricing.ts` with a "last verified" date and must be checked against Anthropic's pricing page before release (not present yet).
 - **Attribution.** Any code adapted from another project is listed in `THIRD_PARTY.md` (tracked, shipped in the npm package) in the same commit.
 - **Hook answers carry nothing but the delegation hint and the model-change notice.** Every hook is answered `204` except: with `REFLEX_DELEGATE=1`, a user-typed main-chat `UserPromptSubmit` gets `hookSpecificOutput.additionalContext`; and the first main-chat hook after reflex moved the main chat to a different model gets `systemMessage` (shown to the user, not the model; `src/worker/model-notice.ts`). Never `decision`, `continue` or anything that can block or change a prompt; any failure is a `204`. Changing the hint text means bumping `HINT_VERSION`.

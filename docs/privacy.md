@@ -1,8 +1,10 @@
 # Privacy: what reflex sends and stores
 
-## Sent to the decision backend (TypeSafe Jev, or Laya on this machine)
+## Sent to the decision backend (TypeSafe Jev, TypeLLM, or Laya on this machine)
 
 With `REFLEX_BACKEND=laya` the same request goes to a `laya-serve` that reflex started on `127.0.0.1` for this session, with a per-session key and `HF_HUB_OFFLINE=1`; it does not leave the machine, and no TypeSafe key is used ([reference](reference.md#laya-decisions-on-this-machine)). Everything below about content and limits applies unchanged. With `REFLEX_COMPARE=laya` the same state goes to Jev and to that local `laya-serve`; the decision record gains only numbers from Laya (a feature vector), never text.
+
+With `REFLEX_BACKEND=typellm` the same `state` goes to TypeLLM instead (`https://api.typellm.ai`, or your `REFLEX_TYPELLM_BASE_URL`) with your `TYPELLM_API_KEY`: the body is `{ model, context, questions }`, where `context` is the `state` below as JSON text and `questions` is the same fixed text reshaped into TypeLLM's typed questions (`src/backend/typellm.ts`). Nothing else is added, and no TypeSafe key is used. TypeLLM's retention of what it receives is set by TypeLLM, not by reflex. Everything below about content and limits applies unchanged.
 
 Only for a request positively identified as the start of work (a user-typed main-chat prompt, or a subagent's first request; see `docs/wire-format.md` §4). Tool-loop steps, harness side calls and anything unclassified are never sent.
 
@@ -39,7 +41,7 @@ In `shadow` and `route` mode reflex registers Claude Code `http` hooks (`UserPro
 
 ## Configuration file and reports
 
-`~/.reflex/env` (in `REFLEX_HOME`) may hold `TYPESAFE_API_KEY` and `REFLEX_*` settings. It is read by the launcher only, its values are never logged, warnings about it name lines and variables but never values, `reflex doctor` shows the key as `(set, not shown)`, and the key is removed from the environment `claude` gets like any other `TYPESAFE_*` variable. A file that holds the key and is readable by group or others is refused whole (permissions are not checked on Windows). Only `REFLEX_*` and `TYPESAFE_API_KEY` are read from it: it is never a way to give reflex, or forward, Anthropic credentials.
+`~/.reflex/env` (in `REFLEX_HOME`) may hold `TYPESAFE_API_KEY`, `TYPELLM_API_KEY` and `REFLEX_*` settings. It is read by the launcher only, its values are never logged, warnings about it name lines and variables but never values, `reflex doctor` shows either key as `(set, not shown)`, and both are removed from the environment `claude` gets like any other `TYPESAFE_*`/`TYPELLM_*` variable. A file that holds either key and is readable by group or others is refused whole (permissions are not checked on Windows). Only `REFLEX_*`, `TYPESAFE_API_KEY` and `TYPELLM_API_KEY` are read from it: it is never a way to give reflex, or forward, Anthropic credentials.
 
 With `REFLEX_DELEGATE=1`, each delivered delegation hint adds a `record: "delegate_hint"` holding only the hashed session, the time and the hint version; every decision record carries `delegate_hint` (the version, or null).
 

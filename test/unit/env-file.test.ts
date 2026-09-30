@@ -71,6 +71,15 @@ describe("mergeEnvFile", () => {
       assert.equal(m.fromFile.size, 0);
     }
   });
+  it("reads TYPELLM_API_KEY, and refuses a group-readable file holding it like one holding the TypeSafe key", () => {
+    const tl = "tl-sk-abcdefghijklmnop";
+    assert.deepEqual(parseEnvFile(`TYPELLM_API_KEY=${tl}\nTYPELLM_OTHER=1\n`).values, { TYPELLM_API_KEY: tl });
+    assert.equal(merge({}, `TYPELLM_API_KEY=${tl}\n`, 0o100600).env["TYPELLM_API_KEY"], tl);
+    const m = merge({}, `REFLEX_MODE=route\nTYPELLM_API_KEY=${tl}\n`, 0o100644);
+    assert.equal(m.state, "refused");
+    assert.equal(m.env["TYPELLM_API_KEY"], undefined);
+    assert.match(m.reason ?? "", /TYPELLM_API_KEY/);
+  });
   it("accepts 0600 and 0400 key files", () => {
     for (const mode of [0o100600, 0o100400]) assert.equal(merge({}, `TYPESAFE_API_KEY=${KEY}\n`, mode).state, "loaded");
   });

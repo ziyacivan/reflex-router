@@ -16,6 +16,7 @@ interface Report {
   cwd: string;
   baseUrl: string | null;
   hasTypesafeKey: boolean;
+  hasTypellmKey: boolean;
   reflexVars: string[];
   passthroughVars: Record<string, string | null>;
   settings: unknown[];
@@ -134,9 +135,10 @@ describe("launcher end to end (fake claude)", () => {
     for (const groups of Object.values(hooks)) assert.equal(groups[0]?.hooks[0]?.url, `${o.report.baseUrl}/__reflex/hook`, "outcome hooks go to the front door");
   });
 
-  it("strips every REFLEX_* and TYPESAFE_* variable from claude's environment and leaves the rest alone", async () => {
-    const o = await run(["-p", "x"], { REFLEX_MODE: "shadow", REFLEX_SOMETHING: "1", TYPESAFE_BASE_URL: "http://x" });
+  it("strips every REFLEX_*, TYPESAFE_* and TYPELLM_* variable from claude's environment and leaves the rest alone", async () => {
+    const o = await run(["-p", "x"], { REFLEX_MODE: "shadow", REFLEX_SOMETHING: "1", TYPESAFE_BASE_URL: "http://x", TYPELLM_API_KEY: "tl-sk-test_key_value", TYPELLM_OTHER: "1" });
     assert.equal(o.report.hasTypesafeKey, false);
+    assert.equal(o.report.hasTypellmKey, false);
     assert.deepEqual(o.report.reflexVars, []);
     assert.equal(o.report.passthroughVars["ANTHROPIC_API_KEY"], "sk-ant-user-key", "the user's Anthropic credentials must pass through untouched");
     assert.equal(o.report.passthroughVars["CLAUDE_CODE_TEST_MARKER"], "kept");

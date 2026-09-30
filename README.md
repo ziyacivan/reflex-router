@@ -58,6 +58,8 @@ mkdir -p ~/.reflex && (umask 077; echo 'TYPESAFE_API_KEY=apikey_...' > ~/.reflex
 reflex doctor        # what it would do, and where each setting came from
 ```
 
+**Or use [TypeLLM](https://typellm.ai/docs)** as the decision backend: `export REFLEX_BACKEND=typellm TYPELLM_API_KEY=tl-sk-...` (or put the key in `~/.reflex/env`). On 500 synthetic tasks its plans matched Jev's on 93% ([measurement](docs/observations.md#2026-09-30--typellm-as-a-decision-backend-agrees-with-jev-on-93-of-the-pilot-tasks-at-similar-latency), [details](docs/reference.md#typellm)); it has not yet been measured on real sessions.
+
 **Or keep decisions on your machine** with [Laya](https://github.com/NandhaKishorM/laya): no key, reflex starts and stops a loopback `laya-serve` for each session, offline. Install once, then set the backend:
 
 ```sh
@@ -68,7 +70,7 @@ reflex doctor
 
 Uncalibrated, Laya keeps Opus for everything; reflex ships a calibration head fitted to reproduce Jev's decisions, with a safety margin towards Opus. It is conservative and less accurate than Jev: on 190 real prompts it moved 24 turns off Opus (Jev moved about half of them), and 1.6% of its plans were cheaper than Jev's ([measurement](docs/observations.md#2026-09-23--the-shipped-laya-head-tested-on-190-real-prompts-15-cheaper-than-jev-refit-with-a-safety-margin), [details](docs/reference.md#laya-decisions-on-this-machine)).
 
-`~/.reflex/env` holds `KEY=value` lines for `REFLEX_*` settings and the key. It is merged **under** your environment (the environment wins), and a file that holds the key but is readable by group or others is refused: reflex warns, ignores the file, and runs plain `claude`. `reflex doctor` says why.
+`~/.reflex/env` holds `KEY=value` lines for `REFLEX_*` settings and a backend key. It is merged **under** your environment (the environment wins), and a file that holds the key but is readable by group or others is refused: reflex warns, ignores the file, and runs plain `claude`. `reflex doctor` says why.
 
 **Start in shadow mode, and look before you route:**
 
@@ -188,8 +190,9 @@ The command prices the same measured token counts at the model sent and at the m
 ## Contributing data
 
 **reflex has no telemetry.** It makes exactly two kinds of network connection: to Anthropic, because that is your
-Claude Code session, and to the decision backend, to ask one question per start of work: TypeSafe Jev, or with
-`REFLEX_BACKEND=laya` a `laya-serve` on `127.0.0.1` that reflex starts offline. There is no third. Nothing about your
+Claude Code session, and to the one decision backend you chose, to ask one question per start of work: TypeSafe Jev,
+TypeLLM with `REFLEX_BACKEND=typellm`, or with `REFLEX_BACKEND=laya` a `laya-serve` on `127.0.0.1` that reflex starts
+offline. There is no third. Nothing about your
 usage is sent anywhere, ever, and there is no setting that turns such a thing on.
 
 Which is also the problem. Every threshold in reflex is tuned on **one person's log**, and the section above says what
@@ -271,7 +274,7 @@ than in a footnote.
 ```sh
 npm ci
 npm test             # typecheck + lint + offline tests (a guard fails any non-loopback connection)
-npm run test:live    # needs a real TYPESAFE_API_KEY; skipped without one
+npm run test:live    # needs a real TYPESAFE_API_KEY / TYPELLM_API_KEY; each test file skips itself without its key
 npm run build
 ```
 

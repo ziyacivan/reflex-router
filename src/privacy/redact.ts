@@ -13,6 +13,7 @@ const RULES: readonly Rule[] = [
   { kind: "private_key", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g },
   { kind: "typesafe_key", re: /\bapikey_[A-Za-z0-9_-]{8,}/g },
   { kind: "anthropic_key", re: /\bsk-ant-[A-Za-z0-9_-]{8,}/g },
+  { kind: "typellm_key", re: /\btl-sk-[A-Za-z0-9_-]{8,}/g },
   { kind: "api_key", re: /\bsk-[A-Za-z0-9_-]{16,}/g },
   { kind: "aws_key", re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
   { kind: "github_token", re: /\b(?:ghp|gho|ghs|ghu|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}/g },

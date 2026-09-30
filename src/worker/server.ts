@@ -11,6 +11,7 @@ import { errorSummary } from "../wire/anthropic.js";
 import { JevBackend } from "../backend/jev.js";
 import type { DecisionBackend } from "../backend/types.js";
 import { LayaBackend } from "../backend/laya.js";
+import { TypeLLMBackend } from "../backend/typellm.js";
 import { LAYA_CALIBRATIONS } from "../backend/laya-calibration.generated.js";
 import { DecisionLog, hashId, type DelegateHintRecord } from "../log/decision-log.js";
 import { HINT_VERSION } from "../delegate/hint.js";
@@ -46,6 +47,10 @@ function layaFor(config: Config, calibrate: boolean, deadlineMs = config.layaDea
 
 function backendFor(config: Config): DecisionBackend | null {
   if (config.backend === "laya") return layaFor(config, config.layaCalibration);
+  if (config.backend === "typellm") {
+    if (config.typellmApiKey === undefined) return null;
+    return new TypeLLMBackend({ baseUrl: config.typellmBaseUrl, apiKey: config.typellmApiKey, model: config.typellmModel, deadlineMs: config.typellmDeadlineMs });
+  }
   if (config.typesafeApiKey === undefined) return null;
   return new JevBackend({ baseUrl: config.jevBaseUrl, apiKey: config.typesafeApiKey, model: config.jevModel, deadlineMs: config.jevDeadlineMs });
 }

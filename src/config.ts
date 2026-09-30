@@ -9,7 +9,7 @@ export const HOOKS_MODES = ["auto", "http", "command", "off"] as const;
 export type HooksMode = (typeof HOOKS_MODES)[number];
 export type Mode = (typeof MODES)[number];
 
-export const BACKENDS = ["jev", "laya"] as const;
+export const BACKENDS = ["jev", "laya", "typellm"] as const;
 export type BackendId = (typeof BACKENDS)[number];
 
 /**
@@ -71,6 +71,14 @@ export interface Config {
   readonly ignoreVersionCheck: boolean;
   /** TypeSafe key. Only ever held by the launcher/worker; never forwarded, logged, or given to the claude child. */
   readonly typesafeApiKey: string | undefined;
+  /** TypeLLM key (TYPELLM_API_KEY), for REFLEX_BACKEND=typellm. Held like the TypeSafe key: never forwarded, logged, or given to the claude child. */
+  readonly typellmApiKey: string | undefined;
+  /** TypeLLM endpoint origin (REFLEX_TYPELLM_BASE_URL); the path /v1/generate is appended. */
+  readonly typellmBaseUrl: string;
+  /** TypeLLM model each decision asks for (REFLEX_TYPELLM_MODEL). */
+  readonly typellmModel: string;
+  /** Hard deadline for one TypeLLM decision, connection setup included (REFLEX_TYPELLM_DEADLINE_MS). Expiry fails open. */
+  readonly typellmDeadlineMs: number;
   /** Jev endpoint origin (REFLEX_JEV_BASE_URL); the path /v1/systemone is appended. */
   readonly jevBaseUrl: string;
   /** Jev model id each decision asks for (REFLEX_JEV_MODEL; default DEFAULT_JEV_MODEL, a pinned version). */
@@ -187,7 +195,8 @@ export interface Config {
 }
 
 /** The hard deadline of the configured decision backend's one decision. */
-export const decisionDeadlineMs = (c: Pick<Config, "backend" | "jevDeadlineMs" | "layaDeadlineMs">): number => (c.backend === "laya" ? c.layaDeadlineMs : c.jevDeadlineMs);
+export const decisionDeadlineMs = (c: Pick<Config, "backend" | "jevDeadlineMs" | "layaDeadlineMs" | "typellmDeadlineMs">): number =>
+  c.backend === "laya" ? c.layaDeadlineMs : c.backend === "typellm" ? c.typellmDeadlineMs : c.jevDeadlineMs;
 
 export type ConfigResult =
   | { readonly ok: true; readonly config: Config; readonly warnings: readonly string[] }
@@ -204,6 +213,15 @@ export const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
 export const DEFAULT_JEV_MODEL = "jev-1.13.0";
 /** Above the first measured cold-connection p95 (1136 ms, docs/observations.md) with some headroom. */
 export const DEFAULT_JEV_DEADLINE_MS = 1500;
+export const TYPELLM_KEY_PREFIX = "tl-sk-";
+export const DEFAULT_TYPELLM_BASE_URL = "https://api.typellm.ai";
+/** The only hosted model TypeLLM lists (GET /v1/models, 2026-09-30); there is no pinned version to ask for yet. */
+export const DEFAULT_TYPELLM_MODEL = "typellm-latest";
+/**
+ * The same as Jev's. Measured on 500 decisions (2 questions, a fresh connection each): p95 464 ms, 2 over 1,500 ms
+ * (docs/observations.md, 2026-09-30).
+ */
+export const DEFAULT_TYPELLM_DEADLINE_MS = 1500;
 /**
  * How often the worker pings the decision backend to keep its keep-alive connection open while nothing is being
  * decided. 0 disables it. The first decision after an idle gap otherwise pays a fresh TCP+TLS handshake
@@ -230,11 +248,12 @@ export const defaultHome = (env: NodeJS.ProcessEnv, homedir: string = os.homedir
 
 /**
  * Every environment variable loadConfig reads (test/unit/config.test.ts keeps this list and the code in step).
- * `reflex doctor` reports the source of each one; only REFLEX_* and TYPESAFE_API_KEY may come from ~/.reflex/env.
+ * `reflex doctor` reports the source of each one; only REFLEX_*, TYPESAFE_API_KEY and TYPELLM_API_KEY may come from ~/.reflex/env.
  */
 export const SETTING_NAMES: readonly string[] = [
   "REFLEX_MODE", "REFLEX_BACKEND", "REFLEX_UPSTREAM_URL", "ANTHROPIC_BASE_URL", "TYPESAFE_API_KEY", "REFLEX_JEV_BASE_URL", "REFLEX_JEV_MODEL", "REFLEX_JEV_DEADLINE_MS", "REFLEX_WARM_INTERVAL_MS",
   "REFLEX_LAYA_BIN", "REFLEX_LAYA_MODEL", "REFLEX_LAYA_DEADLINE_MS", "REFLEX_LAYA_READY_TIMEOUT_MS", "REFLEX_LAYA_CALIBRATION", "REFLEX_COMPARE",
+  "TYPELLM_API_KEY", "REFLEX_TYPELLM_BASE_URL", "REFLEX_TYPELLM_MODEL", "REFLEX_TYPELLM_DEADLINE_MS",
   "REFLEX_ALLOW_FABLE", "REFLEX_TIERS", "REFLEX_UPGRADES", "REFLEX_MAIN_CHAT", "REFLEX_CLAUDE_BIN", "REFLEX_HOME", "REFLEX_IGNORE_VERSION_CHECK",
   "REFLEX_SHAPE_CHECK_N", "REFLEX_MAX_USER_CHARS", "REFLEX_MAX_ASSISTANT_CHARS", "REFLEX_LOG_PROMPTS", "REFLEX_DECISION_RULE", "REFLEX_MASS_EPS",
   "REFLEX_MAX_SWITCH_PENALTY_USD", "REFLEX_SWITCH_BREAKEVEN_REQUESTS", "REFLEX_DELEGATE", "REFLEX_STATUSLINE", "REFLEX_HOOKS", "REFLEX_ESCALATE", "REFLEX_ESCALATE_TARGET", "REFLEX_ESCALATE_THRESHOLD", "REFLEX_ESCALATE_WINDOW_TURNS", "REFLEX_AB", "REFLEX_EFFORT", "REFLEX_EFFORT_UP", "REFLEX_EFFORT_MIDTURN", "REFLEX_EFFORT_AB", "REFLEX_MODEL_HAIKU", "REFLEX_MODEL_SONNET", "REFLEX_MODEL_OPUS", "REFLEX_MODEL_FABLE",
@@ -242,12 +261,12 @@ export const SETTING_NAMES: readonly string[] = [
 ];
 
 /** Names the claude child must never inherit: our own settings and the decision-backend credentials. */
-export const isReflexEnvName = (name: string): boolean => name.startsWith("REFLEX_") || name.startsWith("TYPESAFE_");
+export const isReflexEnvName = (name: string): boolean => name.startsWith("REFLEX_") || name.startsWith("TYPESAFE_") || name.startsWith("TYPELLM_");
 
 /**
  * Names that look like ours but that nothing reads: a typo, or a variable from a plan that was never built.
  * Neither loadConfig nor anything else looks at them, and the launcher strips them from the
- * environment it gives `claude` (every REFLEX_ and TYPESAFE_ name, via isReflexEnvName), so such a variable is
+ * environment it gives `claude` (every REFLEX_, TYPESAFE_ and TYPELLM_ name, via isReflexEnvName), so such a variable is
  * silently dropped twice over. `REFLEX_DUMP=1`
  * was set for a whole session on the strength of a note in docs/prior-art.md before anyone noticed nothing read it.
  */
@@ -264,6 +283,14 @@ function parseJevModel(raw: string | undefined, errors: string[]): string {
   if (/^jev-[A-Za-z0-9.-]+$/.test(raw)) return raw;
   errors.push(`REFLEX_JEV_MODEL must be a Jev model id such as ${DEFAULT_JEV_MODEL} or jev-latest (got ${JSON.stringify(raw.slice(0, 40))})`);
   return DEFAULT_JEV_MODEL;
+}
+
+/** A model id as TypeLLM names them: `typellm-latest`, or a served id such as `Qwen/Qwen3.8-27B` on a self-hosted base URL. */
+function parseTypeLLMModel(raw: string | undefined, errors: string[]): string {
+  if (raw === undefined) return DEFAULT_TYPELLM_MODEL;
+  if (/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(raw)) return raw;
+  errors.push(`REFLEX_TYPELLM_MODEL must be a model id such as ${DEFAULT_TYPELLM_MODEL} (got ${JSON.stringify(raw.slice(0, 40))})`);
+  return DEFAULT_TYPELLM_MODEL;
 }
 
 function parseEnum<T extends string>(raw: string | undefined, allowed: readonly T[], fallback: T, name: string, errors: string[]): T {
@@ -353,11 +380,23 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     else warnings.push(`TYPESAFE_API_KEY does not start with "${TYPESAFE_KEY_PREFIX}"; ignoring it`);
   }
 
+  const tlRaw = setting(env, "TYPELLM_API_KEY");
+  let typellmApiKey: string | undefined;
+  if (tlRaw) {
+    if (tlRaw.startsWith(TYPELLM_KEY_PREFIX)) typellmApiKey = tlRaw;
+    else warnings.push(`TYPELLM_API_KEY does not start with "${TYPELLM_KEY_PREFIX}"; ignoring it`);
+  }
+  const tlUrlRaw = setting(env, "REFLEX_TYPELLM_BASE_URL");
+  const typellmBaseUrl = tlUrlRaw ? parseHttpUrl(tlUrlRaw, "REFLEX_TYPELLM_BASE_URL", errors) : DEFAULT_TYPELLM_BASE_URL;
+
   const jevRaw = setting(env, "REFLEX_JEV_BASE_URL");
   const jevBaseUrl = jevRaw ? parseHttpUrl(jevRaw, "REFLEX_JEV_BASE_URL", errors) : DEFAULT_JEV_BASE_URL;
   let compare = parseEnum(setting(env, "REFLEX_COMPARE"), COMPARE_BACKENDS, "off", "REFLEX_COMPARE", errors);
   if (compare === backend) {
     warnings.push(`REFLEX_COMPARE=${compare} compares against another backend, but it is already REFLEX_BACKEND; ignoring it`);
+    compare = "off";
+  } else if (compare !== "off" && backend !== "jev") {
+    warnings.push(`REFLEX_COMPARE=${compare} records its answers next to Jev's, but REFLEX_BACKEND=${backend}; ignoring it`);
     compare = "off";
   }
   const allowFable = truthy(setting(env, "REFLEX_ALLOW_FABLE"));
@@ -366,7 +405,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     TIERS.map((t) => [t, setting(env, `REFLEX_MODEL_${t.toUpperCase()}`) ?? setting(env, `ANTHROPIC_DEFAULT_${t.toUpperCase()}_MODEL`) ?? DEFAULT_MODELS[t]]),
   ) as Record<Tier, string>;
 
-  if (errors.length > 0 || upstreamUrl === undefined || jevBaseUrl === undefined) return { ok: false, errors: errors.length > 0 ? errors : ["invalid upstream URL"] };
+  if (errors.length > 0 || upstreamUrl === undefined || jevBaseUrl === undefined || typellmBaseUrl === undefined) return { ok: false, errors: errors.length > 0 ? errors : ["invalid upstream URL"] };
 
   const config: Config = {
     mode,
@@ -376,6 +415,10 @@ export function loadConfig(env: NodeJS.ProcessEnv, homedir: string = os.homedir(
     home: defaultHome(env, homedir),
     ignoreVersionCheck: truthy(setting(env, "REFLEX_IGNORE_VERSION_CHECK")),
     typesafeApiKey,
+    typellmApiKey,
+    typellmBaseUrl,
+    typellmModel: parseTypeLLMModel(setting(env, "REFLEX_TYPELLM_MODEL"), errors),
+    typellmDeadlineMs: parseBoundedInt(setting(env, "REFLEX_TYPELLM_DEADLINE_MS"), DEFAULT_TYPELLM_DEADLINE_MS, 50, 60_000, "REFLEX_TYPELLM_DEADLINE_MS", errors),
     jevBaseUrl,
     jevModel: parseJevModel(setting(env, "REFLEX_JEV_MODEL"), errors),
     jevDeadlineMs: parseBoundedInt(setting(env, "REFLEX_JEV_DEADLINE_MS"), DEFAULT_JEV_DEADLINE_MS, 50, 60_000, "REFLEX_JEV_DEADLINE_MS", errors),

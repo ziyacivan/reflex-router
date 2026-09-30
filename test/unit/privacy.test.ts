@@ -8,6 +8,7 @@ describe("redact", () => {
   const secrets: [string, string][] = [
     ["typesafe_key", "use apikey_abcdef1234567890 here"],
     ["anthropic_key", "key sk-ant-api03-abcdefghijklmnop"],
+    ["typellm_key", "key tl-sk-abcdefghijklmnop0123 here"],
     ["api_key", "OPENAI sk-abcdefghijklmnopqrstuvwx"],
     ["aws_key", "AKIAABCDEFGHIJKLMNOP"],
     ["github_token", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"],

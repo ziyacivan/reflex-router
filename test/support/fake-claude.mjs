@@ -19,6 +19,7 @@ if (argv.includes("--version")) {
     cwd: process.cwd(),
     baseUrl: process.env.ANTHROPIC_BASE_URL ?? null,
     hasTypesafeKey: Object.keys(process.env).some((k) => k.startsWith("TYPESAFE_")),
+    hasTypellmKey: Object.keys(process.env).some((k) => k.startsWith("TYPELLM_")),
     reflexVars: Object.keys(process.env).filter((k) => k.startsWith("REFLEX_")),
     passthroughVars: Object.fromEntries(["ANTHROPIC_API_KEY", "CLAUDE_CODE_TEST_MARKER", "HOME", "ENABLE_TOOL_SEARCH"].map((k) => [k, process.env[k] ?? null])),
     settings: argv.flatMap((a, i) => (a === "--settings" ? [argv[i + 1]] : a.startsWith("--settings=") ? [a.slice(11)] : []))

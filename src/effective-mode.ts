@@ -19,6 +19,7 @@ export interface EffectiveModeResult {
 export function resolveEffectiveMode(config: Config, verdict: VersionVerdict | null): EffectiveModeResult {
   if (config.mode === "off") return { mode: "off", degradedReason: null };
   if (config.backend === "jev" && config.typesafeApiKey === undefined) return { mode: "passthrough", degradedReason: "no_backend_key" };
+  if (config.backend === "typellm" && config.typellmApiKey === undefined) return { mode: "passthrough", degradedReason: "no_backend_key" };
   if (config.mode === "route" && verdict?.level === "degrade" && !config.ignoreVersionCheck) {
     return { mode: "shadow", degradedReason: `claude_version:${verdict.reason}` };
   }

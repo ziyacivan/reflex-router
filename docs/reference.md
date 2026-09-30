@@ -6,14 +6,14 @@ Details behind the [README](../README.md). Nothing here is a performance claim; 
 
 Settings are environment variables, optionally supplied by `~/.reflex/env`. A variable that is set to an empty or whitespace-only value (`export ANTHROPIC_BASE_URL=""`) counts as unset, so the next source or the default applies. Defaults below are provisional settings, not measured optima; where one is derived from a measurement its row says so and points at [`docs/observations.md`](observations.md).
 
-**`~/.reflex/env`** (in `REFLEX_HOME` if that is set in the environment) holds `KEY=value` lines for `REFLEX_*` settings and `TYPESAFE_API_KEY`; `#` comments, `export ` and quotes around a value are accepted, other names are ignored with a warning. It is merged **under** the process environment: a variable already set in the environment (and not empty) wins. `REFLEX_HOME` cannot be set in the file, since it says where the file is. A file that contains `TYPESAFE_API_KEY` and is readable by group or others (`chmod 600` fixes it; not checked on Windows) is refused whole: reflex warns, ignores every value in it, and runs without the key, i.e. as plain `claude`. A file it cannot read is skipped with a warning. `reflex doctor` shows the file's state, why a file was refused, and for every setting that is set whether its value came from the process environment or the file; it never prints the key.
+**`~/.reflex/env`** (in `REFLEX_HOME` if that is set in the environment) holds `KEY=value` lines for `REFLEX_*` settings, `TYPESAFE_API_KEY` and `TYPELLM_API_KEY`; `#` comments, `export ` and quotes around a value are accepted, other names are ignored with a warning. It is merged **under** the process environment: a variable already set in the environment (and not empty) wins. `REFLEX_HOME` cannot be set in the file, since it says where the file is. A file that contains either key and is readable by group or others (`chmod 600` fixes it; not checked on Windows) is refused whole: reflex warns, ignores every value in it, and runs without the key, i.e. as plain `claude`. A file it cannot read is skipped with a warning. `reflex doctor` shows the file's state, why a file was refused, and for every setting that is set whether its value came from the process environment or the file; it never prints the key.
 
 **Names nothing reads.** A `REFLEX_*` or `TYPESAFE_*` variable that is not one of the settings above is ignored by the config loader and then stripped from the environment given to `claude`, so a typo — or a variable from a plan that was never built — disappears without a word and looks exactly like a setting that had no effect. `reflex doctor` therefore names each one (`unknown setting: <NAME> is set but nothing reads it …`). It checks the merged environment, so a name set only in `~/.reflex/env` is caught too; a variable set to an empty or whitespace-only value counts as unset and is not reported. The line is informational and does not by itself make `doctor` exit non-zero.
 
 | Variable | Values | Default | Meaning |
 | --- | --- | --- | --- |
 | `REFLEX_MODE` | `route`, `shadow`, `off` | `shadow` | `off` runs plain `claude` with no proxy at all. `shadow` and `route` run the proxy. |
-| `REFLEX_BACKEND` | `jev`, `laya` | `jev` | Decision backend. `jev`: TypeSafe Jev, needs `TYPESAFE_API_KEY`. `laya`: reflex starts [Laya](https://github.com/NandhaKishorM/laya)'s `laya-serve` on this machine for the session (see [Laya](#laya-decisions-on-this-machine)); no key, and nothing leaves the machine but your Claude Code session. |
+| `REFLEX_BACKEND` | `jev`, `typellm`, `laya` | `jev` | Decision backend. `jev`: TypeSafe Jev, needs `TYPESAFE_API_KEY`. `typellm`: [TypeLLM](https://typellm.ai/docs), needs `TYPELLM_API_KEY` (see [TypeLLM](#typellm)). `laya`: reflex starts [Laya](https://github.com/NandhaKishorM/laya)'s `laya-serve` on this machine for the session (see [Laya](#laya-decisions-on-this-machine)); no key, and nothing leaves the machine but your Claude Code session. |
 | `REFLEX_LAYA_BIN` | path or command | `laya-serve` on `PATH` | The `laya-serve` to start. Not found: reflex runs plain `claude` and says how to install it. |
 | `REFLEX_LAYA_MODEL` | `english`, `multilingual`, `typed-decisions` | `english` | The one Laya checkpoint `laya-serve` preloads and every decision asks for. |
 | `REFLEX_LAYA_DEADLINE_MS` | integer, 50–60000 | `2500` | Hard deadline for one Laya decision; on expiry the request goes out unchanged. A calibrated decision asks 9 questions: on an idle Apple M4 (CPU) `english` took p95 754 ms on short tasks and 1,478 ms on long ones, `typed-decisions` p95 2,223 ms on long ones ([observations](observations.md#2026-09-23--laya-calibrated-by-distillation-from-jev)); a slower machine needs a larger value, or route mode simply routes less. |
@@ -21,6 +21,10 @@ Settings are environment variables, optionally supplied by `~/.reflex/env`. A va
 | `REFLEX_COMPARE` | `off`, `laya` | `off` | With `REFLEX_BACKEND=jev`: also start `laya-serve` and put every decided state to Laya as well, off the request's path. The decision record gets a `compare` block holding **numbers only** (Laya's feature vector, its latency or error category); Jev alone decides. This is how calibration data is collected (`scripts/calibrate/fit.ts`). The state goes nowhere Jev does not already see it: Laya runs on `127.0.0.1`. |
 | `REFLEX_LAYA_READY_TIMEOUT_MS` | integer, 1000–600000 | `60000` | How long `laya-serve` may take to load its checkpoint. Past it, reflex stops the server and the session runs without decisions. |
 | `TYPESAFE_API_KEY` | `apikey_...` | unset | Key for the Jev backend. Without it reflex runs plain `claude` and says so. |
+| `TYPELLM_API_KEY` | `tl-sk-...` | unset | Key for the TypeLLM backend. Without it `REFLEX_BACKEND=typellm` runs plain `claude` and says so. |
+| `REFLEX_TYPELLM_BASE_URL` | http(s) URL | `https://api.typellm.ai` | TypeLLM endpoint origin; `/v1/generate` is appended. Point it at a self-hosted TypeLLM server to keep decisions on your own infrastructure (untested by us). |
+| `REFLEX_TYPELLM_MODEL` | model id | `typellm-latest` | The model every TypeLLM decision asks for. The model that answered is recorded per decision (`backend_version`). |
+| `REFLEX_TYPELLM_DEADLINE_MS` | integer, 50–60000 | `1500` | Hard deadline for one TypeLLM decision; on expiry the request goes out unchanged. 500 decisions from one machine took p95 464 ms on a fresh connection ([observations](observations.md#2026-09-30--typellm-as-a-decision-backend-agrees-with-jev-on-93-of-the-pilot-tasks-at-similar-latency)). |
 | `REFLEX_UPSTREAM_URL` | http(s) URL | your `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com` | Where requests are forwarded. A path prefix (gateway) is kept. |
 | `REFLEX_CLAUDE_BIN` | path or command | `claude` on `PATH` | The real Claude Code binary. |
 | `REFLEX_HOME` | directory | `~/.reflex` | State directory (worker log, `decisions.jsonl`). |
@@ -50,6 +54,18 @@ Settings are environment variables, optionally supplied by `~/.reflex/env`. A va
 | `REFLEX_EFFORT_AB` | number, 0–1 | `0` | With `REFLEX_EFFORT`: of the turns whose effort target differs from your client's level, this fraction runs at your level at random instead (`effort.ab: "control"`; the rest `"treated"`). Report section 14 compares the two arms' outcomes, and shows no rate until both have `MIN_OUTCOME_N` windows. The only setting that can show causally whether a changed level keeps quality. |
 | `REFLEX_ESCALATE_THRESHOLD` | number, 0–3 | `1` | Correction score at or above which a closed window escalates. Scores run 0–3 (`CORRECTION_SCORE_CAP`); the default is the lowest score ever recorded from a real correction (1.0, rule `en:thats_wrong`). The other two signals are binary and have no threshold. |
 | `REFLEX_ESCALATE_WINDOW_TURNS` | integer, 1–20 | `3` | How many of the conversation's later new turns one signal covers before it decays. Deliberately small: a sticky escalation turns one complaint into "reflex is off for this session". |
+
+### TypeLLM
+
+`REFLEX_BACKEND=typellm` asks [TypeLLM](https://typellm.ai/docs) instead of Jev. TypeLLM answers typed questions about a context, so reflex sends the same privacy-budgeted state as JSON text and reshapes its fixed questions: a choice becomes an enum over its options, the reasoning score an enum over its levels, a yes/no question a boolean, each with `return_probabilities`. The answers come back as the probabilities the policy already reads; no calibration head is applied.
+
+```sh
+export REFLEX_BACKEND=typellm
+export TYPELLM_API_KEY=tl-sk-...   # or in ~/.reflex/env (chmod 600)
+reflex doctor
+```
+
+Measured on 500 synthetic tasks against Jev's labels: TypeLLM's plan matched Jev's on 93% of them and was cheaper than Jev's on 0.4%, with p95 latency 464 ms; Laya with its shipped head matched on 58% of the same tasks ([observations](observations.md#2026-09-30--typellm-as-a-decision-backend-agrees-with-jev-on-93-of-the-pilot-tasks-at-similar-latency)). That is agreement with Jev on synthetic English tasks, not a measure of quality on your work; it has not been measured on real sessions. TypeLLM reports no confidence, so `REFLEX_DECISION_RULE=argmax` reads a spread statistic in its place (1 − normalised entropy); the default `mass` rule reads only the probabilities. `REFLEX_COMPARE` works only next to Jev and is ignored with this backend.
 
 ### Laya: decisions on this machine
 
@@ -89,7 +105,7 @@ What is sent to the decision backend and what is stored locally is listed in [`d
 
 - **Fail-open.** An invalid configuration, a missing key, or any proxy problem never blocks `claude`: reflex runs plain `claude` or forwards requests straight to the upstream.
 - **Supervised worker.** A small front door owns the loopback port for the whole session and forwards to a worker process. If the worker crashes it is restarted; if it hangs, a liveness probe kills it; if it keeps crashing, traffic goes straight to the upstream. The port is never unbound. Limitation: a request whose response is already streaming when the worker dies fails (Claude Code retries it), and killing the reflex launcher itself (`kill -9`) ends the session's connection.
-- **Your credentials are untouched.** Authentication headers are forwarded as received and never read, stored or logged. `TYPESAFE_API_KEY` and all `REFLEX_*` variables are removed from the environment `claude` sees.
+- **Your credentials are untouched.** Authentication headers are forwarded as received and never read, stored or logged. `TYPESAFE_API_KEY`, `TYPELLM_API_KEY` and all `REFLEX_*`, `TYPESAFE_*` and `TYPELLM_*` variables are removed from the environment `claude` sees.
 - **No edits to your Claude Code settings files.** reflex passes one temporary `--settings` file (merged with yours if you pass `--settings`) and deletes it on exit.
 - **Loopback only.** The proxy binds to `127.0.0.1`.
 
