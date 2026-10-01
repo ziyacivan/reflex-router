@@ -104,8 +104,6 @@ export interface DecisionRecord {
     readonly target: Effort | null;
     readonly via: "message" | "top-level" | null;
     readonly reasons: readonly EffortReason[];
-    /** REFLEX_EFFORT_AB arm, only on turns whose target differed from the client's level; absent otherwise. */
-    readonly ab?: "control" | "treated";
   } | null;
   /** Main-chat cost guard, when it was evaluated. */
   readonly guard: { readonly allowed: boolean; readonly reason: string; readonly ctx: number | null; readonly penalty_usd: number | null; readonly saving_usd: number | null } | null;
@@ -166,13 +164,6 @@ export interface DecisionRecord {
    * `escalated:` entry. It is what lets a log price escalation before anyone turns it on.
    */
   readonly would_escalate: EscalationBlock | null;
-  /**
-   * REFLEX_AB only. This turn entered the randomised experiment because the backend wanted to route it below the
-   * requested tier: `control` means the draw left it on the requested model, `routed` means it was routed as planned.
-   * null means the turn never entered the randomisation, and such turns must be kept out of any comparison of the two
-   * arms - that is the whole point of the tag.
-   */
-  readonly ab: "control" | "routed" | null;
   /** REFLEX_COMPARE only, on a turn the primary backend decided: the second backend's view, numbers only. */
   readonly compare?: CompareBlock;
   readonly prompt_preview?: string;

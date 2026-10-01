@@ -1,6 +1,7 @@
 // ALL routing policy: the questions asked, how answers become a Judgement, and how a Judgement becomes a RoutePlan.
-// Pure (no I/O). Organised as tables so a new dimension (effort) is new rows, not a restructure. Every threshold is a
-// provisional constant, logged with the raw answers so shadow data can retune it.
+// Pure (no I/O). Organised as tables so a new dimension (effort) is new rows, not a restructure. The backend's answers
+// decide; reflex's own constants (the downgrade margin, the reasoning_demand limits, the confidence floors) only say how
+// an answer is read, and every one is logged next to the raw answers.
 import type { Config, Tier } from "./config.js";
 import { fitsContext, tierRank, tierOfModel } from "./tiers.js";
 import type { Answer, Decision, Dimension, Effort, EffortReason, Judgement, Picked, QuestionSet, ReasonCode, RoutePlan, Target } from "./types.js";
@@ -174,12 +175,17 @@ export const DIMENSIONS: Readonly<Partial<Record<Dimension, DimensionRules>>> = 
         return { target: { tier: to }, reasons: ["downgrade", ...moved], wouldUpgrade: false };
       }
 
-      // The backend wants a stronger tier than the client asked for.
+      // The applied reading wants a stronger tier than the client asked for. The `mass` rule's margin (eps) was measured
+      // for moving DOWN; read the other way it turns any tail of probability on a stronger tier into a move up, even when
+      // the backend's own answer is the tier already asked for (31 of 52 upgrades in the 2026-09 logs). A move up
+      // therefore follows the backend's own answer (argmax); a mass-only tail raises effort instead.
+      const jev = j.readings.argmax.value;
       if (cfg.upgrades === "off") return { target: null, reasons: ["upgrade_disabled"], wouldUpgrade: true };
-      if (cfg.upgrades === "confident" && j.rule === "argmax" && j.tier.confidence < UPGRADE_MIN_CONFIDENCE) return { target: null, reasons: ["upgrade_low_confidence"], wouldUpgrade: true };
-      const to = clampUp(chosen, cfg);
+      if (tierRank(jev) <= tierRank(requested)) return { target: null, reasons: ["upgrade_to_effort"], wouldUpgrade: false };
+      if (cfg.upgrades === "confident" && j.readings.argmax.confidence < UPGRADE_MIN_CONFIDENCE) return { target: null, reasons: ["upgrade_low_confidence"], wouldUpgrade: true };
+      const to = clampUp(jev, cfg);
       if (to === null) return { target: null, reasons: ["no_enabled_tier"], wouldUpgrade: true };
-      return { target: { tier: to }, reasons: to === chosen ? ["upgrade"] : ["upgrade", "clamped_up"], wouldUpgrade: true };
+      return { target: { tier: to }, reasons: to === jev ? ["upgrade"] : ["upgrade", "clamped_up"], wouldUpgrade: true };
     },
   },
 };
@@ -199,8 +205,8 @@ export function plan(input: PlanInput, j: Judgement, cfg: Config): RoutePlan {
 /**
  * REFLEX_EFFORT: the level for a `new` turn, read from the reasoning_demand score (0..4) already asked for the tier,
  * one level per step of its scale: 0 mechanical -> low, 1 routine -> medium, 2 moderate -> high, 3 hard -> xhigh,
- * 4 open-ended -> max. A provisional reading, logged with the raw score. The target is absolute (the level the turn
- * should run at), so a later turn can undo an earlier one; it never goes above the client's level unless `up`.
+ * 4 open-ended -> max (rounded to the nearest step). The backend's score alone sets the level, and the raw score is logged.
+ * The target is absolute (the level the turn should run at), so a later turn can undo an earlier one; it never goes above the client's level unless `up`.
  */
 export function effortPlan(demand: number | undefined, requested: string | null, up: boolean): { pick: Effort; target: Effort | null; reasons: EffortReason[] } | null {
   if (demand === undefined || !Number.isFinite(demand)) return null;

@@ -69,24 +69,17 @@ describe("escalation lifetime", () => {
   });
 });
 
-describe("REFLEX_AB settings", () => {
+describe("removed A/B settings", () => {
   const cfgAb = (env: Record<string, string>): ReturnType<typeof loadConfig> => loadConfig({ TYPESAFE_API_KEY: "apikey_x", ...env });
-  it("is 0 by default, so nothing is ever held back", () => {
-    const r = cfgAb({});
-    assert.ok(r.ok);
-    assert.equal(r.config.abFraction, 0);
-  });
-  it("reads a fraction and refuses one outside 0..1", () => {
-    const r = cfgAb({ REFLEX_AB: "0.25", REFLEX_MODE: "route" });
-    assert.ok(r.ok);
-    assert.equal(r.config.abFraction, 0.25);
-    assert.equal(cfgAb({ REFLEX_AB: "1.5" }).ok, false);
-    assert.equal(cfgAb({ REFLEX_AB: "-0.1" }).ok, false);
-  });
-  it("warns when there is nothing to hold back", () => {
-    const r = cfgAb({ REFLEX_AB: "0.5", REFLEX_MODE: "shadow" });
-    assert.ok(r.ok);
-    assert.ok(r.warnings.some((w) => w.includes("REFLEX_AB")), r.warnings.join("; "));
+  it("are ignored with a warning that names them, and nothing else changes", () => {
+    for (const name of ["REFLEX_AB", "REFLEX_AB_UP", "REFLEX_EFFORT_AB"]) {
+      const r = cfgAb({ [name]: "0.5", REFLEX_MODE: "route" });
+      assert.ok(r.ok, name);
+      assert.ok(r.warnings.some((w) => w.includes(`${name} was removed`)), r.warnings.join("; "));
+    }
+    const clean = cfgAb({});
+    assert.ok(clean.ok);
+    assert.ok(!clean.warnings.some((w) => w.includes("removed")));
   });
 });
 

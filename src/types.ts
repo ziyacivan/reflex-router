@@ -90,6 +90,11 @@ export type ReasonCode =
   | "upgrade_disabled"
   | "upgrade_low_confidence"
   | "upgrade"
+  /**
+   * The mass reading (a >= REFLEX_MASS_EPS tail on a stronger tier) wanted a stronger tier but the backend's own answer
+   * (argmax) was not one: the model stays; the turn's effort is whatever the backend's reasoning score says, as on every turn.
+   */
+  | "upgrade_to_effort"
   | "clamped_up"
   | "context_ceiling"
   | "no_enabled_tier"
@@ -110,12 +115,7 @@ export type ReasonCode =
    */
   | "escalated:correction"
   | "escalated:test_failure"
-  | "escalated:reverted_edit"
-  /**
-   * REFLEX_AB: the backend wanted this turn below the requested tier and the randomisation held it on the requested
-   * model instead, as the control arm of the experiment. Not a refusal and not a failure.
-   */
-  | "ab_control";
+  | "escalated:reverted_edit";
 
 /** Why a turn's effort target is what it is (REFLEX_EFFORT); recorded in the decision's `effort` block. */
 export type EffortReason =
@@ -128,8 +128,6 @@ export type EffortReason =
   | "effort_requested_unknown"
   /** REFLEX_ESCALATE=1: the conversation's previous routed or effort-lowered turn closed with an outcome signal, so this turn does not go below the client's level. */
   | "effort_escalated"
-  /** REFLEX_EFFORT_AB: held at the client's level at random, as the control arm. */
-  | "effort_ab_control"
   /**
    * A main-chat turn and REFLEX_EFFORT_MIDTURN is off. Without it only subagents change level: a main chat's later
    * turns need an inserted message, so a first-turn level alone would hold for the whole chat.

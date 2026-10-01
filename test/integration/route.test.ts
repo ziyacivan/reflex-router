@@ -534,3 +534,45 @@ describe("route mode: upgrades (REFLEX_UPGRADES=on, verified Haiku -> Opus)", ()
     assert.deepEqual(JSON.parse(r.body.toString()), { systemMessage: "reflex upgraded the model: claude-haiku-4-5-20251001 → claude-opus-5" });
   });
 });
+
+describe("route mode: the upgrade follows the backend's own answer", () => {
+  let jev: FakeJev;
+  const models = { ...DEFAULT_MODELS, opus: "claude-opus-5" };
+  const stackWith = async (): Promise<Stack> => {
+    const s = await startStack({ effectiveMode: "route", config: { mode: "route", upgrades: "on", jevBaseUrl: jev.url, jevDeadlineMs: 500, models } });
+    s.upstream.setHandler(sseHandler);
+    return s;
+  };
+  before(async () => {
+    jev = await startFakeJev({ kind: "answer", tier: "opus", confidence: 0.9, reasoning: 4 });
+  });
+  after(async () => {
+    await jev.close();
+  });
+
+  it("the backend's own answer being opus: the upgrade is applied", async () => {
+    jev.set({ kind: "answer", tier: "opus", confidence: 0.9, reasoning: 4 });
+    const stack = await stackWith();
+    try {
+      const { rec } = await replay(stack, inSession(fx("main-new-turn"), "s-abup-off"));
+      assert.equal(rec.forwarded.model, "claude-opus-5");
+      assert.deepEqual(rec.plan?.reasons, ["upgrade"]);
+    } finally {
+      await stack.close();
+    }
+  });
+
+  it("a tail of mass on opus with sonnet as the backend's own answer does not move the model", async () => {
+    // confidence 0.7: the other two tiers share 0.3, so opus holds 0.15 (> the 0.10 margin) while sonnet stays the answer.
+    jev.set({ kind: "answer", tier: "sonnet", confidence: 0.7, reasoning: 2 });
+    const stack = await stackWith();
+    try {
+      const { rec } = await replay(stack, inSession(fx("main-new-turn"), "s-abup-tail"));
+      assert.equal(rec.forwarded.model, "claude-sonnet-5");
+      assert.equal(rec.forwarded.rewritten, false);
+      assert.ok(rec.plan?.reasons.includes("upgrade_to_effort"), String(rec.plan?.reasons));
+    } finally {
+      await stack.close();
+    }
+  });
+});

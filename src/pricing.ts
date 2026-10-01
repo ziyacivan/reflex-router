@@ -5,7 +5,7 @@
 // subscription plans (whose limits are not priced per token at all).
 import type { Tier } from "./config.js";
 
-export const LAST_VERIFIED = "2026-09-30";
+export const LAST_VERIFIED = "2026-10-01";
 
 export interface TierPrice {
   /** $ per million base input tokens. */

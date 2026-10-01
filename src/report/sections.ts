@@ -458,12 +458,13 @@ export function abArms(ctx: Ctx): AbArm[] {
 }
 
 /** The randomised block inside section 7. Empty when no turn was ever randomised. */
+
 export function abComparison(ctx: Ctx): string[] {
   const arms = abArms(ctx);
   if (arms.every((a) => a.windows.length === 0)) return [];
   const out = [
     "",
-    "  randomised comparison (REFLEX_AB): of the turns the backend wanted to route below the requested tier, a random",
+    "  randomised comparison (REFLEX_AB, removed; this log was recorded while it ran): of the turns the backend wanted to route below the requested tier, a random",
     "  fraction was held on the requested model instead. Only these turns are comparable with each other - every other",
     "  routed turn was routed BECAUSE the backend judged it easy, so the arms above differ in difficulty, not treatment.",
     ...table([
@@ -608,7 +609,7 @@ const signedPct = (x: number): string => `${x >= 0 ? "+" : ""}${(100 * x).toFixe
 /** Section 8's measured line: what a routed turn cost against a turn held back, both randomly chosen from the same pool. */
 function abCostLine(d: readonly Dec[], showUsd: boolean): string[] {
   const u = abCostUnits(d);
-  if (u.routed.length + u.control.length === 0) return ["  measured (REFLEX_AB): no randomised turns; the rows above are the only estimate, and they assume equal token counts"];
+  if (u.routed.length + u.control.length === 0) return ["  measured: no randomised turns in this log (REFLEX_AB was removed); the rows above are the only estimate, and they assume equal token counts"];
   const head = `  measured (REFLEX_AB, main chat only; a turn plus its tool loop, at the model sent; routed n=${u.routed.length}, control n=${u.control.length})`;
   if (Math.min(u.routed.length, u.control.length) < MIN_OUTCOME_N) return [`${head}: insufficient data, each arm needs n >= ${MIN_OUTCOME_N}`];
   const mr = mean(u.routed)!;

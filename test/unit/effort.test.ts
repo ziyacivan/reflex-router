@@ -176,7 +176,7 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
   // messages: the history Claude Code would really send back.
   const contBody = { ...get("main-continuation").body, messages: [...(newTurn.body["messages"] as unknown[]), ...(get("main-continuation").body["messages"] as unknown[]).slice(2)] };
 
-  function harness(env: Record<string, string>, demand: number, home = tmp(), tier: "opus" | "sonnet" = "opus", random = 0.5) {
+  function harness(env: Record<string, string>, demand: number, home = tmp(), tier: "opus" | "sonnet" = "opus") {
     let tierNow = tier;
     const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "200", ...env });
     assert.ok(loaded.ok);
@@ -196,7 +196,7 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     };
     const log = new DecisionLog(home, false);
     const store = EffortStore.at(home, () => undefined);
-    const router = new Router({ config: loaded.config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.280", backend, breaker: new Breaker(), log, logger: () => undefined, effortStore: store, random: () => random });
+    const router = new Router({ config: loaded.config, effectiveMode: "route", degradedReason: null, claudeVersion: "2.1.280", backend, breaker: new Breaker(), log, logger: () => undefined, effortStore: store });
     const records = (): DecisionRecord[] => completeJsonl<DecisionRecord>(log.file);
     return {
       home,
@@ -346,18 +346,6 @@ describe("router: REFLEX_EFFORT on an Opus 5.5 conversation", () => {
     assert.equal(b.rec.effort?.target, "medium");
     assert.ok(b.rec.effort?.reasons.includes("effort_escalated"));
     assert.equal(msgs(b.sent).at(-1)?.output_config?.effort, "medium", "back to the client's level, by message");
-  });
-
-  it("REFLEX_EFFORT_AB: a control turn is held at the client's level and tagged; a treated one is tagged", async () => {
-    const control = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.1).send(newTurn);
-    assert.equal(control.rewritten, false);
-    assert.equal(control.rec.effort?.ab, "control");
-    assert.ok(control.rec.effort?.reasons.includes("effort_ab_control"));
-    const treated = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_AB: "0.5" }, 0, tmp(), "opus", 0.9).send(newTurn);
-    assert.equal(treated.rec.effort?.ab, "treated");
-    assert.equal(top(treated.sent), "low");
-    const same = await harness({ REFLEX_EFFORT: "1", REFLEX_EFFORT_MIDTURN: "1", REFLEX_EFFORT_AB: "0.5" }, 1, tmp(), "opus", 0.1).send(newTurn);
-    assert.equal(same.rec.effort?.ab, undefined, "a turn already at the client's level never enters the randomisation");
   });
 
   it("without MIDTURN a later main-chat turn keeps the client's level: nothing inserted, the reason recorded", async () => {

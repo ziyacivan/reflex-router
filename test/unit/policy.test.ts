@@ -244,3 +244,51 @@ describe("config for policy", () => {
     assert.equal(cfg({ REFLEX_LOG_PROMPTS: "true" }).logPrompts, true);
   });
 });
+
+describe("upgrades follow the backend's own answer, not the mass margin", () => {
+  /** A `mass` judgement: the mass reading says `mass`, the backend's own answer says `argmax`. */
+  const m = (mass: Tier, argmax: Tier, confidence: number, reasoning = 2): Judgement => ({
+    tier: { value: mass, confidence, probabilities: { [mass]: 0.4, [argmax]: confidence } },
+    rule: "mass",
+    readings: { mass: { value: mass, aboveMass: 0 }, argmax: { value: argmax, confidence } },
+    vetoes: { reasoning_demand: reasoning },
+  });
+  const on = cfg({ REFLEX_UPGRADES: "on" });
+  const sonnet = sub("claude-sonnet-5-5");
+
+  it("a tail of mass on opus with sonnet as the backend's own answer keeps the model and asks for effort", () => {
+    const p = plan(sonnet, m("opus", "sonnet", 0.7), on);
+    assert.equal(p.target, null);
+    assert.deepEqual(p.reasons, ["upgrade_to_effort"]);
+    assert.equal(p.wouldUpgrade, false);
+  });
+
+  it("the backend's own answer being opus still upgrades, under the mass rule", () => {
+    const p = plan(sonnet, m("opus", "opus", 0.45), on);
+    assert.equal(p.target?.tier, "opus");
+    assert.deepEqual(p.reasons, ["upgrade"]);
+    assert.equal(p.wouldUpgrade, true);
+  });
+
+  it("the upgrade target is the backend's answer, not the mass pick above it", () => {
+    const p = plan(sub("claude-haiku-4-5-20251001"), m("opus", "sonnet", 0.8), on);
+    assert.equal(p.target?.tier, "sonnet");
+  });
+
+  it("`confident` gates on the argmax confidence whatever the decision rule", () => {
+    const confident = cfg({ REFLEX_UPGRADES: "confident" });
+    assert.deepEqual(plan(sonnet, m("opus", "opus", 0.69), confident).reasons, ["upgrade_low_confidence"]);
+    assert.equal(plan(sonnet, m("opus", "opus", 0.7), confident).target?.tier, "opus");
+  });
+
+  it("with upgrades off nothing changes: logged as would_upgrade, no effort conversion", () => {
+    const p = plan(sonnet, m("opus", "sonnet", 0.7), cfg());
+    assert.deepEqual(p.reasons, ["upgrade_disabled"]);
+    assert.equal(p.wouldUpgrade, true);
+  });
+
+  it("downgrades are untouched by the argmax reading (the mass margin was measured for them)", () => {
+    const p = plan(sub("claude-opus-5-5"), m("sonnet", "haiku", 0.3, 1), on);
+    assert.equal(p.target?.tier, "sonnet");
+  });
+});

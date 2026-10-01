@@ -109,8 +109,6 @@ export async function doctorCommand(io: LaunchIO & { stdout: (t: string) => void
     }`,
   );
 
-  out(`randomised A/B:  ${c.abFraction === 0 ? "off (REFLEX_AB=<fraction> holds that share of routable turns on the requested model, as a control)" : `${(c.abFraction * 100).toFixed(0)}% of routable turns held back as a control (REFLEX_AB)${c.mode === "route" ? "" : ` - BUT REFLEX_MODE=${c.mode} routes nothing, so there is nothing to hold back`}`}`);
-
   const bin = resolveClaude(c.claudeBin, realResolveIO(io.env));
   if (!bin) {
     out("claude:          NOT FOUND on PATH (set REFLEX_CLAUDE_BIN)");
