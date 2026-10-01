@@ -6,6 +6,32 @@
 
 _Nothing yet._
 
+## 0.10.0 — 2026-10-01
+
+### Changed
+
+- **A move up follows the backend's own answer.** Until now the `mass` rule (a tier that holds more than 10% of the
+  probability is never undercut) also decided upgrades, so a 13% tail on Opus moved a Sonnet turn to Opus even when
+  the backend's own answer was Sonnet (31 of 52 upgrades in two machines' logs). The upgrade now needs the backend's
+  most likely tier (`pick_argmax`) to be stronger than the requested one, and goes to that tier. When only the margin
+  wants a stronger tier the model stays (`upgrade_to_effort` in `plan.reasons`). The `mass` rule for moving down is
+  unchanged. `REFLEX_UPGRADES=confident` now checks the backend's own answer (confidence >= 0.7) whatever
+  `REFLEX_DECISION_RULE` is; under `mass` it used to gate nothing.
+- **A turn's effort comes from the backend's reasoning score alone**, one level per step (the "provisional" label on
+  that mapping is gone). Nothing else raises or lowers it.
+- **Claude Code 2.1.281, 2.1.283, 2.1.285 and 2.1.286 are tested versions**, from the same kind of capture as before
+  (one `claude -p` with a subagent each, redacted and leak-scanned). Their shape checks had already passed on
+  ~20,000 real requests with no violation; the fixtures also make `claude-sonnet-5-5` a known requested model, which
+  clears the `unseen_requested_model` drift flag.
+- Pricing re-verified against Anthropic's pricing page (2026-10-01); no price changed.
+
+### Removed
+
+- **`REFLEX_AB` and `REFLEX_EFFORT_AB`.** The randomised hold-back kept a share of the turns the backend wanted moved
+  on the model (or effort) you asked for, which cost the saving it measured. Setting either now prints a warning and
+  is ignored. `reflex report` still shows the arms of logs recorded while it ran; section 8's measured line now says
+  when a log has none.
+
 ## 0.9.0 — 2026-09-30
 
 ### Added
