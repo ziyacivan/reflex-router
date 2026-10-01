@@ -1,0 +1,126 @@
+{
+ "files": [
+  {
+   "file": "print-agent.main-new-turn.request.json",
+   "description": "main chat, first request of a user turn (last message: user text + system-reminders; trailing role:system message)",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.285.38b",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200
+  },
+  {
+   "file": "print-agent.subagent-new-turn.request.json",
+   "description": "subagent, first request (delegation prompt as user text)",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "cc_version": "2.1.285.9c2",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200
+  },
+  {
+   "file": "print-agent.subagent-new-turn.response.sse.txt",
+   "description": "SSE response of a subagent request (LF-separated, identity-encoded because the capture proxy drops accept-encoding)",
+   "status": 200,
+   "response_headers": {
+    "date": "[redacted]",
+    "content-type": "text/event-stream; charset=utf-8",
+    "transfer-encoding": "chunked",
+    "connection": "keep-alive",
+    "cache-control": "no-cache",
+    "anthropic-ratelimit-unified-5h-status": "[redacted]",
+    "anthropic-ratelimit-unified-representative-claim": "[redacted]",
+    "anthropic-ratelimit-unified-overage-status": "[redacted]",
+    "anthropic-ratelimit-unified-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-7d-reset": "[redacted]",
+    "anthropic-ratelimit-unified-5h-reset": "[redacted]",
+    "anthropic-ratelimit-unified-7d-status": "[redacted]",
+    "anthropic-ratelimit-unified-fallback-percentage": "[redacted]",
+    "anthropic-ratelimit-unified-overage-disabled-reason": "[redacted]",
+    "anthropic-ratelimit-unified-7d-utilization": "[redacted]",
+    "anthropic-ratelimit-unified-status": "[redacted]",
+    "strict-transport-security": "[redacted]",
+    "request-id": "[redacted]",
+    "traceresponse": "[redacted]",
+    "anthropic-organization-id": "[redacted]",
+    "anthropic-workspace-id": "[redacted]",
+    "content-security-policy": "[redacted]",
+    "vary": "Accept-Encoding",
+    "server": "cloudflare",
+    "cf-cache-status": "[redacted]",
+    "x-robots-tag": "[redacted]",
+    "cf-ray": "[redacted]"
+   }
+  },
+  {
+   "file": "print-agent.subagent-continuation.request.json",
+   "description": "subagent, tool-loop continuation (last non-system message is a tool_result)",
+   "facts": {
+    "side_markers": [],
+    "S1": true,
+    "S2": true,
+    "S3": true,
+    "cc_version": "2.1.285.9c2",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": true,
+   "response_status": 200
+  },
+  {
+   "file": "print-agent.main-continuation.request.json",
+   "description": "main chat, tool-loop continuation",
+   "facts": {
+    "side_markers": [],
+    "S1": false,
+    "S2": false,
+    "S3": true,
+    "cc_version": "2.1.285.38b",
+    "entrypoint": "sdk-cli"
+   },
+   "agent_scoped": false,
+   "response_status": 200
+  },
+  {
+   "file": "print-agent.head-probe.json",
+   "description": "startup probe Claude Code sends to the base URL",
+   "expect": {
+    "passthrough": true
+   }
+  },
+  {
+   "file": "print-agent.hooks.jsonl",
+   "description": "hook payloads delivered by http hooks injected with --settings (one JSON per line, in arrival order)",
+   "events": [
+    "UserPromptSubmit",
+    "PreToolUse:Agent",
+    "SubagentStart(sub)",
+    "PreToolUse:Bash(sub)",
+    "PostToolUse:Bash(sub)",
+    "SubagentStop(sub)",
+    "PostToolUse:Agent",
+    "Stop"
+   ]
+  }
+ ],
+ "claude_code_version": "2.1.285",
+ "captured_at": "2026-10-01",
+ "platform": "darwin",
+ "entrypoints": [
+  "sdk-cli"
+ ],
+ "method": "scripts/spike/capture.mjs (dump-only passthrough proxy) + scripts/spike/redact-fixtures.mjs",
+ "gaps": [
+  "see docs/wire-format.md"
+ ]
+}
