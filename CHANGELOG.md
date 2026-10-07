@@ -6,6 +6,24 @@
 
 _Nothing yet._
 
+## 0.10.1 — 2026-10-07
+
+### Fixed
+
+- **Subagents that announce MCP tools are routed again on Claude Code 2.1.287 and later.** With the `inline-tools`
+  beta a `tool_addition` block carries the whole tool (`tool_definition`) instead of naming a deferred one. The
+  rewrite did not know that shape, so such a request was never moved to Haiku or Sonnet (it ran on the model the
+  client asked for, nothing failed). The definition now joins `tools` as a plain tool, in the order announced.
+  Checked against the API on 2.1.292 with one real session: a subagent moved Sonnet 5.5 -> Haiku, its pinned
+  continuation and the move back to Sonnet all answered 200.
+
+### Changed
+
+- **Claude Code 2.1.287, 2.1.288, 2.1.289, 2.1.290, 2.1.291 and 2.1.292 are tested versions**, from the same kind of
+  capture as before (one `claude -p` with a subagent each, redacted and leak-scanned). From 2.1.287 requests also
+  carry the betas `mid-conversation-tool-changes-2026-07-01` and `inline-tools-2026-09-15`.
+- Pricing re-verified against Anthropic's pricing page (2026-10-07); no price changed.
+
 ## 0.10.0 — 2026-10-01
 
 ### Changed
