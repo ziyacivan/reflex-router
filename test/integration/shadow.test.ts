@@ -10,7 +10,7 @@ import { records, replay, requestHeaders, sseHandler, USAGE } from "../support/r
 import { startStack, type Stack } from "../support/stack.js";
 
 const fixtures = loadFixtures();
-const expectsDecision = (fx: Fixture): boolean => fx.expect.turn === "new" && fx.expect.kind !== "unknown";
+const expectsDecision = (fx: Fixture): boolean => fx.expect.turn === "new" && fx.expect.kind !== "unknown" && fx.expect.decided !== false;
 
 describe("shadow mode, end to end", () => {
   let jev: FakeJev;
@@ -51,7 +51,7 @@ describe("shadow mode, end to end", () => {
       } else {
         assert.equal(jev.calls.length, callsBefore, `${fx.file}: side/continuation must not call Jev`);
         assert.equal(rec.decision, null);
-        assert.equal("prompt_preview" in rec, false);
+        if (fx.expect.decided !== false) assert.equal("prompt_preview" in rec, false);
       }
     }
   });

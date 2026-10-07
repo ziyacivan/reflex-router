@@ -20,7 +20,8 @@ describe("wire contract: fixtures parse to their labelled classification", () =>
     it(`${fx.version}/${fx.file}`, () => {
       const v = viewOf(fx);
       const got = { kind: v.kind, signal: v.signal, turn: v.turn, ...(v.sideKind !== null ? { side_kind: v.sideKind } : {}), ...(v.unclassifiedReason !== null ? { unclassified_reason: v.unclassifiedReason } : {}) };
-      assert.deepEqual(got, fx.expect);
+      const { decided: _decided, ...classification } = fx.expect; // `decided` is about the router, not the wire
+      assert.deepEqual(got, classification);
       if (v.turn === "new") assert.ok(v.task && v.task.length > 0, "a new turn has task text");
       else assert.equal(v.task, null);
       if (v.kind !== "unknown") assert.ok(v.convKey, "classified requests have a conversation key");

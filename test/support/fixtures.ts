@@ -15,6 +15,8 @@ export interface Expect {
   /** Only on `side_kind: "unclassified"`: which shape test produced the residual. */
   readonly unclassified_reason?: string;
   readonly passthrough?: boolean;
+  /** `false`: a new turn the router must not decide (a subagent whose model the Agent call chose: `model_explicit`). */
+  readonly decided?: boolean;
 }
 interface ManifestFile {
   readonly file: string;
