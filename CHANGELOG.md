@@ -6,6 +6,31 @@
 
 _Nothing yet._
 
+## 0.11.0 — 2026-10-08
+
+### Changed
+
+- **The built-in Haiku model is Claude Haiku 5.5 (`claude-haiku-5-5`)**, not Haiku 4.5. `REFLEX_MODEL_HAIKU=claude-haiku-4-5-20251001`
+  (or `ANTHROPIC_DEFAULT_HAIKU_MODEL`) keeps the old one, and its full rewrite is unchanged. Haiku 5.5 takes Sonnet 5.5's
+  request shape, so a request retargeted to it changes only `model` (no budget thinking, no stripped effort, no folded
+  system messages); `max_tokens` is capped at 128000 and the 1M-context beta is kept. **Quality was measured**: 240 graded
+  runs of 20 tasks, 60 per arm. Haiku 5.5 got 60/60 right routed and 60/60 with Claude Code's own Haiku prompt, Sonnet 5.5
+  56/60, Haiku 4.5 59/60; the suite is small and easy, so read it as "no failure seen", not as a ranking
+  ([`docs/observations.md`](docs/observations.md), 2026-10-07).
+- **Every pair of Haiku 5.5 with Sonnet 5.5, Opus 5.5, Fable 5.1, Sonnet 5 and Opus 5 was verified against the API**, each way, main
+  chat and subagent, with source-signed thinking in the history ([`docs/wire-format.md`](docs/wire-format.md) §5.13).
+- **Effort works on Haiku 5.5**, by message, like Sonnet 5.5 (cache kept; mean output tokens 3,153 at `low`, 3,610 at `medium`,
+  8,896 at `max` over four runs). Haiku 4.5 still takes none.
+- **Prices are per model.** Haiku 5.5 is priced by prompt length ($0.10 / $0.50 per MTok up to 100,000 tokens, $0.50 / $2.50
+  above); the cost guard now prices the cache holder and the target by model, so a Haiku 4.5 switch is still judged at $1 and
+  a Haiku 5.5 one at $0.10. Report section 12's side-call estimate prices Haiku at the new default, so its savings read about
+  ten times larger than before; the quality measurement above did not cover side calls.
+- Disabled thinking is not rewritten for Haiku 5.5 at effort `xhigh` or `max` (the API answers 400 there, 200 at `high` and below).
+- Claude Code 2.1.293 is a tested version (it knows Haiku 5.5); `claude-haiku-5-5` is a known requested model.
+
+- **Sonnet 5.5 reads its cache at 0.05x ($0.10), Sonnet 5 at 0.1x ($0.20)**, as the pricing page's table now says (it had
+  contradicted itself on 2026-10-07). Pricing re-verified against Anthropic's pricing page (2026-10-08).
+
 ## 0.10.1 — 2026-10-07
 
 ### Fixed
