@@ -125,13 +125,15 @@ const blocksOf = (content: unknown): unknown[] => (typeof content === "string" ?
 
 /**
  * For a target that does not take `tool_addition` blocks (ACCEPTS_TOOL_CHANGES): each one announces a deferred tool as
- * visible from then on, so it becomes its tool without `defer_loading` (the same visible set) and the block goes. A
- * system message left with no content goes too (its only other observed key, a per-turn effort, is one neither such
+ * visible from then on, so it becomes its tool without `defer_loading` (the same visible set) and the block goes. The
+ * block names a deferred tool already in `tools` (`tool_reference`, 2.1.282) or, with the `inline-tools` beta (2.1.287),
+ * carries the whole definition (`tool_definition`), which then joins `tools` as a plain tool. A system message left with no content goes too (its only other observed key, a per-turn effort, is one neither such
  * target takes). A `tool_removal` has no such equivalent and was never observed, so it, like any block type not listed
  * here, makes the request unrewritable: it is then sent unchanged, never with a block the target may reject.
  */
-function liftToolAdditions(messages: Json[]): { messages: Json[]; added: Set<string>; lifted: number } | null {
+function liftToolAdditions(messages: Json[]): { messages: Json[]; added: Set<string>; defined: Map<string, Json>; lifted: number } | null {
   const added = new Set<string>();
+  const defined = new Map<string, Json>();
   let lifted = 0;
   const out: Json[] = [];
   for (const m of messages) {
@@ -142,8 +144,11 @@ function liftToolAdditions(messages: Json[]): { messages: Json[]; added: Set<str
     const kept: unknown[] = [];
     let mark: unknown;
     for (const c of m["content"] as unknown[]) {
-      if (isObj(c) && c["type"] === "tool_addition" && isObj(c["tool"]) && typeof c["tool"]["name"] === "string") {
-        added.add(c["tool"]["name"]);
+      const tool = isObj(c) && c["type"] === "tool_addition" && isObj(c["tool"]) ? c["tool"] : undefined;
+      const def = tool !== undefined && tool["type"] === "tool_definition" && isObj(tool["definition"]) ? tool["definition"] : undefined;
+      if (isObj(c) && tool !== undefined && (typeof tool["name"] === "string" || (def !== undefined && typeof def["name"] === "string"))) {
+        if (def !== undefined) defined.set(String(def["name"]), def);
+        else added.add(String(tool["name"]));
         lifted++;
         if (c["cache_control"] !== undefined) mark = c["cache_control"];
       } else if (isObj(c) && c["type"] === "text") kept.push(c);
@@ -157,7 +162,7 @@ function liftToolAdditions(messages: Json[]): { messages: Json[]; added: Set<str
     if (mark !== undefined && isObj(tail) && tail["cache_control"] === undefined) host[host.length - 1] = { ...tail, cache_control: mark };
     if (kept.length > 0) out.push({ ...m, content: kept });
   }
-  return { messages: out, added, lifted };
+  return { messages: out, added, defined, lifted };
 }
 
 /**
@@ -240,15 +245,22 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
     if (lifted === null) return { ok: false, reason: "system_block_unfoldable" };
     messages = lifted.messages;
     if (lifted.lifted > 0) fields.push(`messages.tool_addition_lifted:${lifted.lifted}`);
-    if (lifted.added.size > 0 && Array.isArray(b["tools"])) {
+    if (lifted.defined.size > 0 && !Array.isArray(b["tools"])) return { ok: false, reason: "system_block_unfoldable" };
+    if ((lifted.added.size > 0 || lifted.defined.size > 0) && Array.isArray(b["tools"])) {
       let undeferred = 0;
-      b["tools"] = (b["tools"] as unknown[]).map((t) => {
+      const tools = (b["tools"] as unknown[]).map((t) => {
         if (!isObj(t) || t["defer_loading"] !== true || typeof t["name"] !== "string" || !lifted.added.has(t["name"])) return t;
         undeferred++;
         const { defer_loading: _, ...rest } = t;
         return rest;
       });
+      // A defined tool is appended in the order announced (a later request of the same loop lifts the same blocks to
+      // the same list, so the rewritten prefix stays stable); one already listed by name is not duplicated.
+      const listed = new Set(tools.flatMap((t) => (isObj(t) && typeof t["name"] === "string" ? [t["name"]] : [])));
+      const appended = [...lifted.defined].filter(([name]) => !listed.has(name)).map(([, def]) => def);
+      b["tools"] = [...tools, ...appended];
       if (undeferred > 0) fields.push(`tools.undeferred:${undeferred}`);
+      if (appended.length > 0) fields.push(`tools.defined:${appended.length}`);
     }
   }
   if (!ACCEPTS_SYSTEM_MESSAGES[opts.to] && messages.some((m) => m["role"] === "system")) {

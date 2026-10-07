@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { describe, it } from "node:test";
 import { retarget, retargetBetas, HAIKU_THINKING_BUDGET, STRIP_BETAS } from "../../src/wire/rewrite.js";
 import { loadFixtures } from "../support/fixtures.js";
@@ -295,5 +296,65 @@ describe("retarget: shapes a target rejects and no rewrite can keep", () => {
     const r = to("claude-opus-5-5", "opus", { thinking: { type: "enabled", budget_tokens: 8000 } });
     assert.ok(r.ok);
     assert.deepEqual((JSON.parse(r.body.toString()) as Json)["thinking"], { type: "adaptive" });
+  });
+});
+
+describe("retarget with inline tools (inline-tools beta, 2.1.287 and later)", () => {
+  // A subagent's first request: its system message announces three MCP tools with the whole definition
+  // (`tool_addition` -> `{type: "tool_definition", definition}`), not a reference to a deferred tool in `tools`.
+  const raw = JSON.parse(fs.readFileSync("test/fixtures/claude-code/2.1.292/print-agent.subagent-new-turn.request.json", "utf8")) as { body: Json };
+  const orig = raw.body;
+  const body = (b: Json): Buffer => Buffer.from(JSON.stringify(b));
+  const defs = (b: Json): Json[] =>
+    (b["messages"] as Json[]).flatMap((m) => (Array.isArray(m["content"]) ? (m["content"] as Json[]) : [])).filter((c) => c["type"] === "tool_addition").map((c) => (c["tool"] as Json)["definition"] as Json);
+  const names = (b: Json): string[] => (b["tools"] as Json[]).map((t) => String(t["name"]));
+
+  it("Haiku: each announced definition becomes a tool of its own, without defer_loading, and the blocks go", () => {
+    const announced = defs(orig);
+    assert.equal(announced.length, 3, "the fixture announces three tools by definition");
+    const r = retarget(body(orig), { from: "sonnet", to: "haiku", model: HAIKU });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.deepEqual(defs(b), []);
+    assert.ok(!(b["messages"] as Json[]).some((m) => m["role"] === "system"));
+    assert.deepEqual(names(b), [...names(orig), ...announced.map((d) => String(d["name"]))], "appended in the order announced");
+    assert.deepEqual((b["tools"] as Json[]).slice(-3), announced, "each definition as Claude Code sent it");
+    assert.ok(!(b["tools"] as Json[]).slice(-3).some((t) => "defer_loading" in t));
+    assert.ok((b["tools"] as Json[]).some((t) => t["defer_loading"] === true), "tools the harness never announced stay deferred");
+    assert.ok(r.fields.includes("messages.tool_addition_lifted:3") && r.fields.includes("tools.defined:3"));
+    assert.equal(cacheMarks(b["messages"]), cacheMarks(orig["messages"]), "the breakpoint on the last tool_addition moves, it is not lost");
+  });
+
+  it("is deterministic, so a pinned tool loop rewrites the same history to the same tools every time", () => {
+    const a = retarget(body(orig), { from: "sonnet", to: "haiku", model: HAIKU });
+    const c = retarget(body(orig), { from: "sonnet", to: "haiku", model: HAIKU });
+    assert.ok(a.ok && c.ok);
+    assert.ok(a.body.equals(c.body));
+  });
+
+  it("a definition whose name is already listed is not added twice", () => {
+    const b0 = JSON.parse(JSON.stringify(orig)) as Json;
+    const first = defs(b0)[0]!;
+    (b0["tools"] as Json[]).push({ ...first });
+    const r = retarget(body(b0), { from: "sonnet", to: "haiku", model: HAIKU });
+    assert.ok(r.ok);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.equal(names(b).filter((n) => n === first["name"]).length, 1);
+    assert.ok(r.fields.includes("tools.defined:2"));
+  });
+
+  it("a tool_definition with no tools array, or with no name, leaves the request unchanged", () => {
+    const noTools = JSON.parse(JSON.stringify(orig)) as Json;
+    delete noTools["tools"];
+    assert.deepEqual(retarget(body(noTools), { from: "sonnet", to: "haiku", model: HAIKU }), { ok: false, reason: "system_block_unfoldable" });
+    const noName = JSON.parse(JSON.stringify(orig)) as Json;
+    delete defs(noName)[0]!["name"];
+    assert.deepEqual(retarget(body(noName), { from: "sonnet", to: "haiku", model: HAIKU }), { ok: false, reason: "system_block_unfoldable" });
+  });
+
+  it("Opus 5.5 takes the blocks natively: the request keeps them", () => {
+    const r = retarget(body(orig), { from: "sonnet", to: "opus", model: "claude-opus-5-5" });
+    assert.ok(r.ok);
+    assert.equal(defs(JSON.parse(r.body.toString()) as Json).length, 3);
   });
 });

@@ -598,6 +598,25 @@ also accepted throughout. Lifting changes `tools` when
 a server connects mid-session, which costs the target model one cache write from `tools` on, as appending a loaded
 tool does natively.
 
+**Claude Code 2.1.287 and later: `tool_addition` carries the definition.** From 2.1.287 every request (Sonnet 5.5,
+`sdk-cli`) also sends the betas `mid-conversation-tool-changes-2026-07-01` and `inline-tools-2026-09-15`, and the
+`tool_addition` blocks in the system message no longer name a deferred tool in `tools`: they hold the tool itself,
+`{type:"tool_addition", tool:{type:"tool_definition", definition:{name, description, input_schema}}}` (fixtures
+`2.1.287` to `2.1.292`, `print-agent.subagent-new-turn`, three MCP tools; the main chat's first request has no such
+blocks). 2.1.286 and earlier send `tool:{type:"tool_reference", name}`. The lift reads both: a definition is appended to
+`tools` as a plain tool in the order announced, unless that name is already listed (`tools.defined:N` in
+`forwarded.fields`); a `tool_definition` with no name, or a request without `tools`, is left unrewritten. Before this
+change such a request was unrewritable (`system_block_unfoldable`), so a subagent that announced MCP tools was never
+routed; nothing failed, it ran on the model the client asked for. One `claude -p` session with a general-purpose
+subagent (2.1.292, model setting `sonnet`, entrypoint `sdk-cli`, est. $0.17 at list prices):
+the main chat's first request retargeted to Haiku, the subagent's first request retargeted with the lift
+(`messages.tool_addition_lifted:3`, `tools.defined:3`, `messages.system_folded:1`), its pinned continuation, and the
+same request sent back to Sonnet with Haiku-made turns in history: all 200, the new betas kept on the Haiku request
+(`test/fixtures/experiments/2.1.292/experiment.route-sonnet55-to-haiku-subagent-inline-tools.results.json`). Not
+measured: Haiku with a definition that the main chat announces, a `tool_removal`, Opus 5.5 or Fable 5.1 receiving
+`tool_definition` blocks from a rewritten Sonnet request (they keep the blocks as sent), and cache behaviour after a
+mid-session connect.
+
 Context at start, interactive, same machine and settings (Claude Code's `/context`, before any prompt):
 
 | Session | Total | MCP tools |
