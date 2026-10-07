@@ -612,10 +612,35 @@ subagent (2.1.292, model setting `sonnet`, entrypoint `sdk-cli`, est. $0.17 at l
 the main chat's first request retargeted to Haiku, the subagent's first request retargeted with the lift
 (`messages.tool_addition_lifted:3`, `tools.defined:3`, `messages.system_folded:1`), its pinned continuation, and the
 same request sent back to Sonnet with Haiku-made turns in history: all 200, the new betas kept on the Haiku request
-(`test/fixtures/experiments/2.1.292/experiment.route-sonnet55-to-haiku-subagent-inline-tools.results.json`). Not
-measured: Haiku with a definition that the main chat announces, a `tool_removal`, Opus 5.5 or Fable 5.1 receiving
-`tool_definition` blocks from a rewritten Sonnet request (they keep the blocks as sent), and cache behaviour after a
-mid-session connect.
+(`test/fixtures/experiments/2.1.292/experiment.route-sonnet55-to-haiku-subagent-inline-tools.results.json`).
+
+**The rest of it, measured** (2.1.292, same session shape, model setting `sonnet`, `sdk-cli`; the main chat's first
+continuation also announces three tools by definition, so this is a real main-chat request):
+
+- *Every target accepts it.* Subagent first request and main-chat continuation, each sent to Haiku 4.5 (lifted:
+  `messages.tool_addition_lifted:3`, `tools.defined:3`), Opus 5.5 and Fable 5.1 (Sonnet 5.5's bytes with only `model`
+  changed, `tool_definition` blocks kept): all six 200
+  (`experiment.tool-definitions-all-targets.results.json`, est. $1.45 at list prices, mostly the Opus and Fable cache
+  writes).
+- *A tool announced mid-conversation costs a routed Haiku turn one cache rewrite.* Cold pair (a nonce at the head of the
+  last system block), the request before the announcement and then after it
+  (`experiment.tool-definitions-connect-cache.results.json`, est. $0.27):
+
+  | Request pair | before: write / read | after: write / read |
+  | --- | --- | --- |
+  | Sonnet 5.5, blocks kept (what Claude Code sends) | 18,673 / 9,975 | 769 / 28,648 |
+  | Haiku 4.5, blocks lifted into `tools` | 13,976 / 7,484 | 13,976 / 8,020 |
+
+  Natively the announcement adds only its own tail (769 tokens written, everything before it read). Lifted, the tools
+  grow, and the cache holds only the tool list's own prefix (about 8,000 tokens here): the system prompt and the whole
+  conversation are written again, once, at the Haiku cache-write rate. The size is this session's; a longer
+  conversation rewrites more.
+- *`tool_removal` is not reproduced.* Claude Code's bundled tool runner emits it, in the same system message as the
+  additions, as `{type:"tool_removal", tool:{type:"tool_reference", name}}` when the tool set shrinks between two
+  requests (read from the 2.1.292 binary, not seen on the wire: no capture of 15 versions holds one, and `claude -p`
+  cannot be made to produce it). reflex leaves such a request unrewritten, as before, so it runs on the model the client
+  asked for; a test pins that. Lifting it would mean deleting the tool from `tools` at the right point of the history,
+  which no observed request has checked.
 
 Context at start, interactive, same machine and settings (Claude Code's `/context`, before any prompt):
 

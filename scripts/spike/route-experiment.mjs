@@ -87,6 +87,15 @@ const modelOverrides = {};
  */
 let probeEffortSwitch = false;
 /**
+ * --probe-tool-defs (Claude Code 2.1.287+: `tool_addition` carries `tool_definition`). At the main chat's first
+ * continuation (its trailing system message announces tools): the request retargeted to every target (does each accept
+ * the lifted tools / the kept blocks?), and the cache cost of a tool announced mid-conversation: the request as it was
+ * BEFORE the announcement, then AFTER it, on the source model (blocks kept, `tools` unchanged) and on the first target
+ * (blocks lifted into `tools`). The second request's cache_read_input_tokens against the first's cache_creation is the
+ * measure.
+ */
+let probeToolDefs = false;
+/**
  * Main chat only, no model change: does a changed effort actually change how much the model thinks, when the system
  * message at index 1 still carries the client's effort? At the first continuation a fixed synthetic puzzle (never user
  * text) is appended to the last user message and the request is sent to the END (full answer, max_tokens clamped to
@@ -131,6 +140,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--lean") lean = true;
   else if (argv[i] === "--probe-message-oc") probeMessageOc = true;
   else if (argv[i] === "--probe-effort-switch") probeEffortSwitch = true;
+  else if (argv[i] === "--probe-tool-defs") probeToolDefs = true;
   else if (argv[i] === "--probe-effort-apply") probeEffortApply = true;
   else if (argv[i] === "--probe-effort-verify") probeEffortVerify = true;
   else if (argv[i] === "--effort-verify-parts") verifyParts = new Set(argv[++i].split(","));
@@ -477,6 +487,47 @@ async function effortApply(req, headers, parsed, facts, view) {
   for (let i = 1; i <= APPLY_REPEATS; i++) for (const [label, mutate] of variants) await probe(`apply:${label} #${i}`, req.url, headers, variantBody(base, mutate), ["puzzle", "max_tokens"], f, { keepHeaders: true, full: true });
 }
 
+/** The request as it was before its trailing tools were announced: no tool_addition block, the cache mark on what stays. */
+function withoutAnnouncements(parsed) {
+  return variantBody(parsed, (b) => {
+    b.messages = b.messages.flatMap((m) => {
+      if (m.role !== "system" || !Array.isArray(m.content) || !m.content.some((c) => c.type === "tool_addition")) return [m];
+      const mark = m.content.findLast((c) => c.cache_control)?.cache_control;
+      const kept = m.content.filter((c) => c.type !== "tool_addition");
+      if (kept.length === 0) return [];
+      if (mark && !kept.at(-1).cache_control) kept[kept.length - 1] = { ...kept.at(-1), cache_control: mark };
+      return [{ ...m, content: kept }];
+    });
+  });
+}
+
+async function toolDefProbes(req, raw, headers, parsed, facts) {
+  const added = JSON.stringify(parsed.messages).match(/"tool_addition"/g)?.length ?? 0;
+  log(`tool-defs: main continuation announces ${added} tool(s)`);
+  const defs = JSON.stringify(parsed.messages).includes('"tool_definition"');
+  const f = { ...facts, announced: added, by_definition: defs };
+  for (const t of TARGETS) {
+    const r = rt(raw, t);
+    if (r.ok) await probe(`main-tooldef:${t}`, req.url, headers, r.body, r.fields, f);
+    else log(`main-tooldef:${t} not rewritable: ${r.reason}`);
+  }
+  for (const t of [from, TARGETS[0]]) {
+    // A synthetic nonce at the head of the last system block (never user text) makes the system prompt and everything
+    // after it cold for this pair, so an earlier probe's identical bytes cannot answer for the second request. Each
+    // target gets its own nonce.
+    const nonce = `[probe ${t} ${Date.now()}]\n`;
+    const cold = structuredClone(parsed);
+    const last = cold.system.findLast((x) => x.type === "text");
+    last.text = nonce + last.text;
+    const mk = (buf) => (t === from ? { ok: true, body: buf, fields: [] } : rt(buf, t));
+    const b0 = mk(withoutAnnouncements(cold));
+    const b1 = mk(Buffer.from(JSON.stringify(cold)));
+    if (!b0.ok || !b1.ok) { log(`tool-connect-cache:${t} not rewritable`); continue; }
+    await probe(`tool-connect-cache:${t}:before-announcement`, req.url, headers, b0.body, b0.fields, f);
+    await probe(`tool-connect-cache:${t}:after-announcement`, req.url, headers, b1.body, b1.fields, f);
+  }
+}
+
 async function route(req, rawIn, headers) {
   let raw = rawIn;
   if (sourceModel) {
@@ -551,6 +602,11 @@ async function route(req, rawIn, headers) {
     }
     const r = rt(raw, target);
     return r.ok ? { body: r.body, headers, note: `subagent-pinned:${target}`, fields: r.fields, facts } : { body: raw, headers, note: `rewrite_failed:${r.reason}` };
+  }
+
+  if (probeToolDefs && !state.toolDefsProbed && view.kind === "main" && view.turn === "continuation" && JSON.stringify(parsed.messages).includes('"tool_addition"')) {
+    state.toolDefsProbed = true;
+    await toolDefProbes(req, raw, headers, parsed, facts);
   }
 
   if (view.kind === "main" && view.turn === "continuation") {
