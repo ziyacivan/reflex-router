@@ -26,7 +26,14 @@ const opt = (k: string, d: string): string => (argv.includes(k) ? argv[argv.inde
 const out = path.resolve(opt("--out", path.join(repo, "_dumps", `tc-${Date.now()}`)));
 const capUsd = Number(opt("--cap-usd", "25"));
 const reps = Number(opt("--reps", "1"));
-const ARMS: Record<string, { tier: string; sonnet?: string }> = {
+// Quality arms (Haiku 5.5 work, 2026-10-07): `haiku` sets REFLEX_MODEL_HAIKU (the target of "Jev says haiku"); `native`
+// runs the model directly (`--model`, shadow mode: nothing is rewritten), so Claude Code builds the prompt for it itself.
+// `--claude-bin` pins the Claude Code build (REFLEX_CLAUDE_BIN) so every arm sees the same client.
+const ARMS: Record<string, { tier: string; sonnet?: string; haiku?: string; native?: string }> = {
+  haiku45: { tier: "haiku", haiku: "claude-haiku-4-5-20251001" },
+  haiku55: { tier: "haiku", haiku: "claude-haiku-5-5" },
+  haiku55native: { tier: "sonnet", native: "claude-haiku-5-5" },
+  haiku45native: { tier: "sonnet", native: "claude-haiku-4-5-20251001" },
   opus55: { tier: "opus" },
   sonnet55: { tier: "sonnet", sonnet: "claude-sonnet-5-5" },
   sonnet5: { tier: "sonnet", sonnet: "claude-sonnet-5" },
@@ -34,7 +41,7 @@ const ARMS: Record<string, { tier: string; sonnet?: string }> = {
   sonnetdefault: { tier: "sonnet" },
 };
 const arms = opt("--arms", "opus55,sonnet55,sonnet5").split(",");
-const allTasks = JSON.parse(fs.readFileSync(path.resolve(opt("--tasks-file", path.join(here, "tasks.json"))), "utf8")) as { id: string; prompt: string; check: string | null }[];
+const allTasks = JSON.parse(fs.readFileSync(path.resolve(opt("--tasks-file", path.join(here, "tasks.json"))), "utf8")) as { id: string; prompt: string; check: string | null; answer?: { all?: string[]; anyOf?: { min: number; of: string[] } } }[];
 const only = argv.includes("--tasks") ? new Set(opt("--tasks", "").split(",")) : null;
 const tasks = allTasks.filter((t) => !only || only.has(t.id));
 const work = path.join(os.tmpdir(), "reflex-token-compare", opt("--work", "work"));
@@ -51,7 +58,7 @@ function freshSandbox(): void {
   for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "sandbox"]]) spawnSync("git", args, { cwd: work, env });
 }
 
-function childEnv(home: string, jevUrl: string, sonnet: string | undefined): NodeJS.ProcessEnv {
+function childEnv(home: string, jevUrl: string, arm: { sonnet?: string; haiku?: string; native?: string }): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (k.startsWith("CLAUDE_CODE_") || k === "CLAUDECODE" || k === "CLAUDE_EFFORT" || k.startsWith("REFLEX_") || k.startsWith("TYPESAFE_") || k === "ANTHROPIC_BASE_URL") continue;
@@ -60,13 +67,15 @@ function childEnv(home: string, jevUrl: string, sonnet: string | undefined): Nod
   return {
     ...env,
     REFLEX_HOME: home,
-    REFLEX_MODE: "route",
+    REFLEX_MODE: arm.native ? "shadow" : "route",
+    ...(argv.includes("--claude-bin") ? { REFLEX_CLAUDE_BIN: opt("--claude-bin", "") } : {}),
     REFLEX_JEV_BASE_URL: jevUrl,
     TYPESAFE_API_KEY: "apikey_fake-for-loopback-jev",
     REFLEX_UPSTREAM_URL: opt("--upstream", "https://api.anthropic.com"),
     REFLEX_TIERS: "haiku,sonnet,opus",
     REFLEX_STATUSLINE: "0",
-    ...(sonnet ? { REFLEX_MODEL_SONNET: sonnet } : {}),
+    ...(arm.sonnet ? { REFLEX_MODEL_SONNET: arm.sonnet } : {}),
+    ...(arm.haiku ? { REFLEX_MODEL_HAIKU: arm.haiku } : {}),
   };
 }
 
@@ -106,15 +115,26 @@ outer: for (let rep = 1; rep <= reps; rep++) {
       const before = readRecords(logFile).length;
       freshSandbox();
       const started = Date.now();
+      // The final answer of `claude -p` is read here and judged by the task's regexes; only the verdict is recorded, never the text.
+      let answerText = "";
       const code = await new Promise<number | null>((resolve) => {
-        const child = spawn(process.execPath, [path.resolve(opt("--reflex-bin", path.join(repo, "bin", "reflex.js"))), "-p", t.prompt, "--allowedTools", ...ALLOWED], { cwd: work, env: childEnv(home, jev.url, arm.sonnet), stdio: ["ignore", "ignore", "ignore"] });
+        const child = spawn(process.execPath, [path.resolve(opt("--reflex-bin", path.join(repo, "bin", "reflex.js"))), "-p", t.prompt, "--allowedTools", ...ALLOWED, ...(arm.native ? ["--model", arm.native] : [])], { cwd: work, env: childEnv(home, jev.url, arm), stdio: ["ignore", "pipe", "ignore"] });
+        child.stdout?.on("data", (d: Buffer) => { answerText += d.toString("utf8"); });
         const timer = setTimeout(() => child.kill("SIGTERM"), 10 * 60_000);
         child.on("exit", (c) => { clearTimeout(timer); resolve(c); });
       });
       await new Promise((r) => setTimeout(r, 500));
       const recs = readRecords(logFile).slice(before);
       const check = t.check === null ? null : spawnSync("bash", ["-c", t.check], { cwd: work, stdio: "ignore", timeout: 60_000 }).status === 0;
-      const row = { task: t.id, arm: armName, rep, exit: code, secs: Math.round((Date.now() - started) / 1000), check, ...summarise(recs) };
+      // --keep-answers: the answer texts go to <out>/answers (local, _dumps is gitignored) so a grader can be checked by eye.
+      if (argv.includes("--keep-answers")) {
+        fs.mkdirSync(path.join(out, "answers"), { recursive: true });
+        fs.writeFileSync(path.join(out, "answers", `${t.id}-${armName}-${rep}.txt`), answerText);
+      }
+      const ans = t.answer;
+      const answerOk = ans === undefined ? null
+        : (ans.all ?? []).every((r) => new RegExp(r, "i").test(answerText)) && (ans.anyOf === undefined || ans.anyOf.of.filter((r) => new RegExp(r, "i").test(answerText)).length >= ans.anyOf.min);
+      const row = { task: t.id, arm: armName, rep, exit: code, answer_ok: answerOk, answer_chars: answerText.length, secs: Math.round((Date.now() - started) / 1000), check, ...summarise(recs) };
       fs.appendFileSync(resultsPath, JSON.stringify(row) + "\n");
       spent += row.usd;
       log(`${t.id} ${armName}#${rep}: exit ${code}, check ${check}, ${row.requests} req, out ${row.output}, $${row.usd} (total ~$${spent.toFixed(2)})`);

@@ -23,6 +23,9 @@ export interface GuardInput {
   /** Tier whose cache holds this conversation (last served), or null when nothing was served yet. */
   readonly cacheTier: Tier | null;
   readonly to: Tier;
+  /** The models behind `cacheTier` and `to`, when known: prices are per model (Haiku 4.5 and 5.5 differ tenfold). */
+  readonly cacheModel?: string | null;
+  readonly toModel?: string | null;
   /** input + cache_read + cache_create of the last response on this conversation; null when unknown. */
   readonly ctxTokens: number | null;
   /** The request's own cache TTL (main chat: 1h via the extended-cache-ttl beta). */
@@ -53,9 +56,11 @@ export function guard(g: GuardInput): GuardResult {
   if (g.ctxTokens === null || g.cacheTier === null) return { allowed: false, reason: "ctx_unknown", ctx: null, penaltyUsd: null, savingUsd: null };
   const from = g.cacheTier;
   const ctx = g.ctxTokens;
-  const penaltyUsd = cacheWriteUsd(g.to, ctx, g.ttl) - cacheReadUsd(from, ctx);
+  const fm = g.cacheModel ?? null;
+  const tm = g.toModel ?? null;
+  const penaltyUsd = cacheWriteUsd(g.to, ctx, g.ttl, tm) - cacheReadUsd(from, ctx, fm);
   const savingUsd = g.perRequest === null ? null
-    : (g.perRequest.write * (cacheWriteRate(from, g.ttl) - cacheWriteRate(g.to, g.ttl)) + g.perRequest.output * (priceOf(from).output - priceOf(g.to).output) + ctx * (cacheReadRate(from) - cacheReadRate(g.to))) / 1_000_000;
+    : (g.perRequest.write * (cacheWriteRate(from, g.ttl, fm) - cacheWriteRate(g.to, g.ttl, tm)) + g.perRequest.output * (priceOf(from, fm).output - priceOf(g.to, tm).output) + ctx * (cacheReadRate(from, fm) - cacheReadRate(g.to, tm))) / 1_000_000;
   const done = (allowed: boolean, reason: GuardReason): GuardResult => ({ allowed, reason, ctx, penaltyUsd, savingUsd });
   if (penaltyUsd <= g.maxPenaltyUsd) return done(true, "within_limit");
   if (g.breakevenRequests > 0 && savingUsd !== null && savingUsd > 0 && penaltyUsd <= g.breakevenRequests * savingUsd) return done(true, "breakeven");

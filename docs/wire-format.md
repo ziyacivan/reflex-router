@@ -723,6 +723,86 @@ released while the stream is still passing (`src/worker/router.ts`), so the rese
 model the client asked for, which is every other fail-open path's outcome too. The record gets `refusal: {category,
 pin_released}`. With that in place the sonnet tier default is `claude-sonnet-5-5`, Claude Code's own `sonnet`.
 
+### 5.13 Haiku 5.5 (experiment, 2.1.292 and 2.1.293)
+
+Claude Haiku 5.5 (`claude-haiku-5-5`, released 2026-10-07) is not Haiku 4.5. The models page lists it with adaptive thinking,
+effort (default `medium`), a 1M-token window and 128K output; Claude Code 2.1.293 knows it (`haiku` resolves to it) and sends
+it **Sonnet 5.5's own request shape**: a subagent started with the Agent tool's `model: haiku` carried
+`thinking: {type: "adaptive", display: "omitted"}`, `output_config: {effort: "medium"}`, a trailing `role:"system"` message,
+`max_tokens: 128000` and the same betas (fixture `2.1.293/print-agent.subagent-new-turn`). Since 0.11.0 it is the built-in
+Haiku model; `REFLEX_MODEL_HAIKU=claude-haiku-4-5-20251001` keeps Haiku 4.5, whose full rewrite is unchanged.
+
+**What the API takes** (`experiment.haiku55-caps.results.json`, a live Sonnet 5.5 main-chat request sent to `claude-haiku-5-5`
+one change at a time; `experiment.haiku55-caps-control-sonnet55.results.json` is the same list sent to Sonnet 5.5 as the
+control). Probes stop at `message_start`. **200** on Haiku 5.5: adaptive thinking with and without `display`,
+`thinking: {type: "enabled", budget_tokens}`, thinking absent, top-level effort `low`, `medium`, `high`, `xhigh` and `max`, no
+`output_config`, no per-message `output_config`, the system message kept or dropped, `max_tokens` 64000 and 128000,
+`temperature: 1`, the `context-1m-2025-08-07` beta, `tool_addition` blocks by definition (kept, and with the history's thinking
+dropped), forced `tool_choice` (`any`, `tool`, also with adaptive thinking), and `thinking: {type: "disabled"}` **at effort
+`low`, `medium`, `high` or none**. **400**: disabled thinking at `xhigh` or `max` ("output_config.effort 'xhigh' is not
+supported when thinking is disabled on this model. Use effort 'high' or below"), `max_tokens` 200000 (above 128000), and a
+request without the `context-management` beta that still carries `context_management`, as for every model. The control
+(Sonnet 5.5) answers 400 to every disabled-thinking variant ("send `between_tools` instead") and to forced `tool_choice`, so
+the probe does detect a rejection. Claude Code's baked-in catalog lists `rejects_disabled_thinking` for Haiku 5.5, which the
+API does not do at effort `high` and below today; reflex follows the API and refuses only the combination that 400s.
+
+**What reflex does with it.** One table, `MODEL_CAPS` in `src/wire/rewrite.ts`, says where Haiku 5.5 differs from the Haiku
+tier's row (which describes Haiku 4.5): adaptive thinking, effort, system messages, `tool_addition` blocks and per-message
+effort are kept as they are, `max_tokens` is capped at 128000 (64000 for Haiku 4.5), and the 1M-context beta is not stripped
+(`STRIP_BETAS`). A request retargeted to Haiku 5.5 changes only `model` (`fields: ["model"]`), where Haiku 4.5 gets budget
+thinking, no effort, folded system messages and lifted `tool_addition` blocks. A request with disabled thinking and effort
+`xhigh` or `max` is not rewritten for it (`thinking_disabled_rejected`).
+
+**Verified pairs.** Claude Code 2.1.293, the user's own settings (model setting `sonnet`, entrypoint `sdk-cli`); subagent
+runs take their source from the Agent call's `model` parameter, the main-chat runs used `--model <alias or id>` (a deliberate
+override, recorded in each result's `settings.claude_args`). Each column is what the header says; **every run that was made answered 200**, and "not run" is stated where a column was skipped.
+
+| Source -> target | Subagent: first request, pin, un-pin | Subagent: source-signed thinking in history | Main chat (first continuation with source-signed thinking, pin, un-pin) |
+| --- | --- | --- | --- |
+| Sonnet 5.5 -> Haiku 5.5 | 200 | 200 | 200 |
+| Opus 5.5 -> Haiku 5.5 | 200 | 200 | 200 (`--model opus`) |
+| Fable 5.1 -> Haiku 5.5 | 200 | 200 | 200 (`--model fable`) |
+| Sonnet 5 -> Haiku 5.5 | 200 | not run | 200 (`--model claude-sonnet-5`) |
+| Opus 5 -> Haiku 5.5 | 200 | not run | 200 (`--model claude-opus-5`) |
+| Haiku 5.5 -> Sonnet 5.5 | 200 | 200 | 200 (`--model claude-haiku-5-5`) |
+| Haiku 5.5 -> Opus 5.5 | 200 | 200 | 200 |
+| Haiku 5.5 -> Fable 5.1 | 200 | 200 | 200 |
+| Haiku 5.5 -> Sonnet 5 | 200 | not run | 200 |
+| Haiku 5.5 -> Opus 5 | 200 (first request only) | not run | 200 |
+
+The Opus 5.5 and Fable 5.1 main chats were first run with the Haiku target left at Haiku 4.5 by mistake (an unquoted shell
+variable dropped the `--model haiku=` flag); those two results were discarded and the runs repeated. The scripts price every Haiku as Haiku 4.5, so their dollar estimates
+(about $8 for all of §5.13) overstate Haiku 5.5's share.
+
+**Effort** (`experiment.effort-verify-haiku55*.results.json`, four runs of a fixed puzzle whose answer, 1006, was right in
+all 20 answers): an appended effort message with the top-level value unchanged keeps the cache (0 written, 25,136 read) and
+changes the level (output tokens, mean of four: **3,153 at `low`, 3,610 at the client's `medium`, 8,896 at `max`**); the
+top-level value alone does not (`low` 3,070, `max` 3,242), and changing it together with the message rewrites the messages
+cache (7,443 written). Haiku 5.5 is therefore handled like Sonnet 5.5, by message (`src/wire/effort.ts`). Not measured: the
+preserved-thinking check on an account that enforces it (this account does not enforce it on Sonnet 5.5 either, §5.12).
+
+**Window and tokens** (`experiment.haiku55-ceiling-*.results.json`: the main chat's first request padded with synthetic
+filler to 150,000 and to 400,000 estimated tokens, four kinds of filler): all eight answered 200, the largest at **905,642 real
+tokens**. Bytes per real token: prose 3.5-3.6, code 2.5, the repository's lockfile 2.05-2.13, dense digits and punctuation
+1.05-1.15 (the new tokenizer; reflex estimates 2.5). So a request at the 150k routing ceiling is 106k to 176k real tokens
+for ordinary content and up to 313k for the densest filler. The ceiling stays at 150k estimated tokens: the window is no
+longer what limits it, but the price steps up past 100,000 prompt tokens and nothing measures how well Haiku 5.5 works that
+deep.
+
+**Quality** is in [`observations.md`](observations.md) (2026-10-07): 60 of 60 graded runs right routed and native, on a small easy suite.
+
+**Price.** Haiku 5.5 is priced by prompt length: $0.10 input / $0.50 output per MTok for a prompt up to 100,000 tokens, $0.50 /
+$2.50 above it; cache writes 1.25x (5m) and 2x (1h) of the input price, reads $0.01 / $0.05. Three sources agree: the
+pricing page (2026-10-07), the model page, and Claude Code's own baked-in model catalog (`haiku_55`, with
+`long_prompt.above_prompt_tokens: 100000`). `src/pricing.ts` prices a response by its own prompt size (input + cache read +
+cache write), and the cost guard and the report's side-call estimate price by model.
+
+**Sonnet 5.5's cache read** was contradictory on 2026-10-07: the pricing table, the model page and Claude Code's baked-in
+catalog (`tier_2_10`) said $0.20 (0.1x), a sentence on the caching page, the pricing page's caching text and claude.com/pricing
+said 0.05x ($0.10). On 2026-10-08 the pricing page's own table reads **$0.10** (footnote: "Opus 5.5 and Sonnet 5.5 are priced at
+0.05x"), Sonnet 5 stays $0.20, so `src/pricing.ts` now prices Sonnet 5.5 at 0.05x and Sonnet 5 at 0.1x. The model page and Claude
+Code's catalog (2.1.293) still said $0.20 when read; the documentation, not a bill, is what settled it.
+
 ## 6. Responses
 
 Plain SSE, `\n\n`-separated (no `\r\n` seen), events `message_start, content_block_start, ping, content_block_delta, content_block_stop, message_delta, message_stop`. The capture proxy drops `accept-encoding`, so compression was **not** observed. The interactive client offers `zstd`, which `node:zlib` cannot decode before Node 22.15, so reflex narrows `accept-encoding` toward the upstream to the client's own offer restricted to `gzip, br, deflate` (absent stays absent). A response in any other coding is relayed untouched and logged as `usage_unknown_reason: "encoding:<name>"`. `message_start.message.usage` has `input_tokens, cache_creation_input_tokens, cache_read_input_tokens, cache_creation{…}, output_tokens, service_tier, inference_geo`; final usage is in `message_delta.usage` (adds `output_tokens_details`, `iterations[]`).

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { describe, it } from "node:test";
 import { retarget, retargetBetas, HAIKU_THINKING_BUDGET, STRIP_BETAS } from "../../src/wire/rewrite.js";
+import { maxOutputTokens } from "../../src/tiers.js";
 import { loadFixtures } from "../support/fixtures.js";
 
 type Json = Record<string, unknown>;
@@ -356,5 +357,70 @@ describe("retarget with inline tools (inline-tools beta, 2.1.287 and later)", ()
     const r = retarget(body(orig), { from: "sonnet", to: "opus", model: "claude-opus-5-5" });
     assert.ok(r.ok);
     assert.equal(defs(JSON.parse(r.body.toString()) as Json).length, 3);
+  });
+});
+
+describe("Haiku 5.5 takes Sonnet 5.5's own request shape (2.1.293 native capture, 2.1.292 probes)", () => {
+  const H55 = "claude-haiku-5-5";
+  const read = (v: string, f: string): Json => (JSON.parse(fs.readFileSync(`test/fixtures/claude-code/${v}/${f}`, "utf8")) as { body: Json }).body;
+  const sonnet = read("2.1.292", "print-agent.subagent-new-turn.request.json");
+  const native = read("2.1.293", "print-agent.subagent-new-turn.request.json");
+  const body = (b: Json): Buffer => Buffer.from(JSON.stringify(b));
+
+  it("the native Haiku 5.5 request has Sonnet 5.5's fields: adaptive thinking, effort, a trailing system message", () => {
+    assert.equal(native["model"], H55);
+    assert.deepEqual(native["thinking"], sonnet["thinking"]);
+    assert.deepEqual(native["output_config"], sonnet["output_config"]);
+    assert.equal(native["max_tokens"], sonnet["max_tokens"]);
+    assert.deepEqual(Object.keys(native), Object.keys(sonnet));
+    assert.equal(((native["messages"] as Json[]).at(-1) as Json)["role"], "system");
+  });
+
+  it("Sonnet 5.5 -> Haiku 5.5 changes only the model: nothing is folded, lifted or dropped", () => {
+    const r = retarget(body(sonnet), { from: "sonnet", to: "haiku", model: H55 });
+    assert.ok(r.ok);
+    assert.deepEqual(r.fields, ["model"]);
+    const b = JSON.parse(r.body.toString()) as Json;
+    assert.deepEqual({ ...b, model: sonnet["model"] }, sonnet);
+  });
+
+  it("Opus 5.5 -> Haiku 5.5 keeps effort (xhigh and max included), the system messages and the tool_addition blocks", () => {
+    const opus = { ...sonnet, model: "claude-opus-5-5", output_config: { effort: "max" } };
+    const r = retarget(body(opus), { from: "opus", to: "haiku", model: H55 });
+    assert.ok(r.ok);
+    assert.deepEqual(r.fields, ["model"]);
+    assert.deepEqual((JSON.parse(r.body.toString()) as Json)["output_config"], { effort: "max" });
+  });
+
+  it("Haiku 4.5 still gets the full rewrite from the same request (budget thinking, no effort, folded system messages)", () => {
+    const r = retarget(body(sonnet), { from: "sonnet", to: "haiku", model: HAIKU });
+    assert.ok(r.ok);
+    assert.ok(r.fields.includes("thinking") && r.fields.includes("output_config.effort") && r.fields.some((f) => f.startsWith("messages.system_folded")));
+  });
+
+  it("disabled thinking: Haiku 5.5 takes it at effort high or below, not at xhigh or max; Sonnet 5.5 never", () => {
+    const off = (effort: string): Buffer => body({ ...sonnet, thinking: { type: "disabled" }, output_config: { effort } });
+    for (const e of ["low", "medium", "high"]) assert.ok(retarget(off(e), { from: "sonnet", to: "haiku", model: H55 }).ok, e);
+    for (const e of ["xhigh", "max"]) assert.deepEqual(retarget(off(e), { from: "sonnet", to: "haiku", model: H55 }), { ok: false, reason: "thinking_disabled_rejected" }, e);
+    assert.deepEqual(retarget(off("low"), { from: "haiku", to: "sonnet", model: "claude-sonnet-5-5" }), { ok: false, reason: "thinking_disabled_rejected" });
+  });
+
+  it("max_tokens: Haiku 5.5 keeps 128000, Haiku 4.5 is lowered to 64000", () => {
+    assert.equal(maxOutputTokens("haiku", H55), 128_000);
+    assert.equal(maxOutputTokens("haiku", HAIKU), 64_000);
+    assert.equal(maxOutputTokens("haiku", null), 128_000, "no model: the tier default, Haiku 5.5");
+    const big = { ...sonnet, max_tokens: 128_000 };
+    const r5 = retarget(body(big), { from: "sonnet", to: "haiku", model: H55 });
+    const r4 = retarget(body(big), { from: "sonnet", to: "haiku", model: HAIKU });
+    assert.ok(r5.ok && r4.ok);
+    assert.equal((JSON.parse(r5.body.toString()) as Json)["max_tokens"], 128_000);
+    assert.equal((JSON.parse(r4.body.toString()) as Json)["max_tokens"], 64_000);
+  });
+
+  it("the 1M-context beta stays for Haiku 5.5 and goes for Haiku 4.5 (2.1.292 probe: 200 on 5.5)", () => {
+    const header = "claude-code-20250219,context-1m-2025-08-07,effort-2025-11-24";
+    assert.deepEqual(retargetBetas(header, "haiku", H55), { value: header, stripped: [] });
+    assert.deepEqual(retargetBetas(header, "haiku", HAIKU).stripped, ["context-1m-2025-08-07"]);
+    assert.deepEqual(retargetBetas(header, "haiku").stripped, ["context-1m-2025-08-07"], "no model: the tier's row");
   });
 });

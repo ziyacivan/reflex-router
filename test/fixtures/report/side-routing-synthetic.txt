@@ -4,28 +4,28 @@
 
   candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction), at both cache TTLs since the log does not record one for these calls, or records both:
     tier    ceiling  TTL  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
-    haiku   150,000   5m         6             -         $0.2061    $0.1881        $0.0180      $0.0180
-    haiku   150,000   1h         6             -         $0.2173    $0.1681        $0.0492      $0.0492
-    sonnet     none   5m         6             -         $0.2061    $0.3763       $-0.1702     $-0.1702
-    sonnet     none   1h         6             -         $0.2173    $0.3362       $-0.1189     $-0.1189
+    haiku   150,000   5m         6             -         $0.2061    $0.0188        $0.1873      $0.1873
+    haiku   150,000   1h         6             -         $0.2173    $0.0168        $0.2005      $0.2005
+    sonnet     none   5m         6             -         $0.2061    $0.3572       $-0.1511     $-0.1511
+    sonnet     none   1h         6             -         $0.2173    $0.3108       $-0.0934     $-0.0934
 
   haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
-    side kind     routable  warm  cold  over ceiling   tokens  cache read  gap p50  $ at requested  $ at tier   $ saved
-    suggestion           3     2     1             -  185,135       98.8%     60 s         $0.1071    $0.0911   $0.0160
-    notification         2     1     1             -  134,084       99.2%     20 s         $0.0766    $0.0963  $-0.0196
-    no_tools             1     1     0             -    6,130       32.6%     10 s         $0.0224    $0.0008   $0.0216
-    suggestion: 2.0 warm per cold against break-even 3.1 - BELOW it, saves $0.0160
-    notification: 1.0 warm per cold against break-even 3.1 - BELOW it, COSTS $0.0196
-    no_tools: 32.6% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0216
+    side kind     routable  warm  cold  over ceiling   tokens  cache read  gap p50  $ at requested  $ at tier  $ saved
+    suggestion           3     2     1             -  185,135       98.8%     60 s         $0.1071    $0.0091  $0.0980
+    notification         2     1     1             -  134,084       99.2%     20 s         $0.0766    $0.0096  $0.0670
+    no_tools             1     1     0             -    6,130       32.6%     10 s         $0.0224    $0.0001  $0.0223
+    suggestion: 2.0 warm per cold against break-even 0.3, saves $0.0980
+    notification: 1.0 warm per cold against break-even 0.3, saves $0.0670
+    no_tools: 32.6% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0223
 
   sonnet (ceiling none; TTL per request, none recorded so 5m assumed):
     side kind     routable  warm  cold  over ceiling   tokens  cache read  gap p50  $ at requested  $ at tier   $ saved
-    suggestion           3     2     1             -  185,135       98.8%     60 s         $0.1071    $0.1822  $-0.0751
-    notification         2     1     1             -  134,084       99.2%     20 s         $0.0766    $0.1926  $-0.1159
-    no_tools             1     1     0             -    6,130       32.6%     10 s         $0.0224    $0.0015   $0.0209
-    suggestion: 2.0 warm per cold against break-even 8.3 - BELOW it, COSTS $0.0751
-    notification: 1.0 warm per cold against break-even 8.3 - BELOW it, COSTS $0.1159
-    no_tools: 32.6% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0209
+    suggestion           3     2     1             -  185,135       98.8%     60 s         $0.1071    $0.1700  $-0.0629
+    notification         2     1     1             -  134,084       99.2%     20 s         $0.0766    $0.1863  $-0.1097
+    no_tools             1     1     0             -    6,130       32.6%     10 s         $0.0224    $0.0009   $0.0215
+    suggestion: 2.0 warm per cold against break-even 6.3 - BELOW it, COSTS $0.0629
+    notification: 1.0 warm per cold against break-even 6.3 - BELOW it, COSTS $0.1097
+    no_tools: 32.6% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0215
 
   exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
   conversations ever pinned below requested: 1 of 2

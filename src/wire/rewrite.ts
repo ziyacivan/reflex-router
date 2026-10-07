@@ -3,7 +3,7 @@
 // route mode deliberately applies a plan. Pure: bytes in, bytes out (or a reason why not), plus the list of fields
 // it changed so every routed record can say exactly what was rewritten.
 import type { Tier } from "../config.js";
-import { MAX_OUTPUT_TOKENS } from "../tiers.js";
+import { maxOutputTokens } from "../tiers.js";
 
 /** How a model family takes reasoning settings, as observed in native Claude Code requests. */
 type ThinkingStyle = "adaptive" | "budget";
@@ -33,6 +33,33 @@ const MESSAGE_OUTPUT_CONFIG_MODELS: readonly string[] = ["claude-sonnet-5-5"];
  */
 const ACCEPTS_TOOL_CHANGES: Readonly<Record<Tier, boolean>> = { haiku: false, sonnet: false, opus: true, fable: true };
 
+/**
+ * What one model takes where it differs from its family's row in the tables above. Haiku 5.5 takes Sonnet 5.5's own
+ * request shape unchanged (2.1.292 probes, docs/wire-format.md §5.13: adaptive thinking, top-level and per-message effort
+ * from low to max, role:system messages, tool_addition blocks by definition, max_tokens 128000, the 1M-context beta, all
+ * 200), unlike Haiku 4.5, which these tables describe. Matched by substring of the target model id.
+ */
+interface ModelCaps {
+  readonly style: ThinkingStyle;
+  readonly systemMessages: boolean;
+  readonly effort: boolean;
+  readonly toolChanges: boolean;
+  readonly messageOutputConfig: boolean;
+}
+const MODEL_CAPS: readonly (readonly [string, Partial<ModelCaps>])[] = [
+  ["claude-haiku-5-5", { style: "adaptive", systemMessages: true, effort: true, toolChanges: true, messageOutputConfig: true }],
+];
+const capsOf = (to: Tier, model: string): ModelCaps => {
+  const o = MODEL_CAPS.find(([k]) => model.toLowerCase().includes(k))?.[1] ?? {};
+  return {
+    style: o.style ?? STYLE[to],
+    systemMessages: o.systemMessages ?? ACCEPTS_SYSTEM_MESSAGES[to],
+    effort: o.effort ?? ACCEPTS_EFFORT[to],
+    toolChanges: o.toolChanges ?? ACCEPTS_TOOL_CHANGES[to],
+    messageOutputConfig: o.messageOutputConfig ?? ACCEPTS_MESSAGE_OUTPUT_CONFIG[to],
+  };
+};
+
 /** Native Haiku 4.5 requests from Claude Code use this budget (with max_tokens 32000). */
 export const HAIKU_THINKING_BUDGET = 31999;
 /** The API's minimum thinking budget. */
@@ -49,7 +76,7 @@ const VERIFIED_RETARGETS: ReadonlySet<string> = new Set(["sonnet>haiku", "opus>s
  * Models no retarget has been verified for yet, on either side: a pair whose source or target model matches one is
  * unverified whatever its tiers are. A new model in a verified family is not the model that was verified.
  */
-const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5"];
+const UNVERIFIED_MODELS: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 /**
  * Pairs with such a model verified since, written with the model id in place of its tier (docs/wire-format.md §5.7,
  * §5.12, test/fixtures/experiments/2.1.280/experiment.route-*opus55*, 2.1.284/experiment.route-*sonnet55*): first
@@ -63,6 +90,17 @@ const VERIFIED_MODEL_RETARGETS: ReadonlySet<string> = new Set([
   "claude-opus-5-5>claude-sonnet-5-5", "claude-sonnet-5-5>claude-opus-5-5",
   "claude-sonnet-5-5>haiku", "haiku>claude-sonnet-5-5", "claude-sonnet-5-5>fable", "fable>claude-sonnet-5-5",
   "opus>claude-sonnet-5-5", "claude-sonnet-5-5>opus",
+  // Haiku 5.5 (docs/wire-format.md §5.13, test/fixtures/experiments/2.1.293/experiment.route-*haiku55*): every pair of Haiku
+  // 5.5 with Sonnet 5.5, Opus 5.5 and Fable 5.1, each way: first request, subagent pin, a continuation holding
+  // source-signed thinking, un-pin with target-signed thinking back to the source; the Sonnet 5.5 main chat as well.
+  // Not run: an Opus 5.5 or Fable 5.1 main chat on either side, and Sonnet 5 / Opus 5 (the `sonnet` / `opus` keys here).
+  "claude-sonnet-5-5>claude-haiku-5-5", "claude-haiku-5-5>claude-sonnet-5-5",
+  "claude-opus-5-5>claude-haiku-5-5", "claude-haiku-5-5>claude-opus-5-5",
+  "fable>claude-haiku-5-5", "claude-haiku-5-5>fable",
+  // Sonnet 5 and Opus 5 (the `sonnet` / `opus` keys), main chat and subagent, each way: experiment.route-{sonnet5,opus5}-to-haiku55,
+  // experiment.route-haiku55-to-sonnet5-opus5; the Opus 5.5 and Fable 5.1 main chats: experiment.route-{opus55,fable}-to-haiku55-main,
+  // experiment.route-haiku55-to-sonnet55-opus55-fable-main. All 200, with source-signed thinking in the history.
+  "sonnet>claude-haiku-5-5", "claude-haiku-5-5>sonnet", "opus>claude-haiku-5-5", "claude-haiku-5-5>opus",
 ]);
 const unverifiedKey = (m: string | null): string | undefined => UNVERIFIED_MODELS.find((u) => m !== null && m.toLowerCase().includes(u));
 export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | null, toModel: string): boolean => {
@@ -76,10 +114,12 @@ export const isVerifiedRetarget = (from: Tier, to: Tier, fromModel: string | nul
  * `anthropic-beta` values a target model rejects, removed from the header when a request is retargeted to it (the
  * rest of the header is kept as is). Each row names the evidence.
  */
-export const STRIP_BETAS: readonly { readonly to: Tier; readonly prefix: string; readonly evidence: string }[] = [
+export const STRIP_BETAS: readonly { readonly to: Tier; readonly prefix: string; readonly evidence: string; readonly exceptModel?: string }[] = [
   {
     to: "haiku",
     prefix: "context-1m-",
+    // Haiku 5.5 takes the beta (2.1.292 caps probe: 200), and its window is 1M.
+    exceptModel: "claude-haiku-5-5",
     evidence:
       "route acceptance session B1 (opus[1m] -> Haiku): 400 \"The long context beta is not yet available for this subscription.\"; " +
       "interactive-opus1m.main-new-turn fixture; experiment.interactive-opus1m-first-turn-to-haiku",
@@ -87,9 +127,9 @@ export const STRIP_BETAS: readonly { readonly to: Tier; readonly prefix: string;
 ];
 
 /** The `anthropic-beta` header for a request retargeted to `to`, and the values removed from it. Pure. */
-export function retargetBetas(header: string | undefined, to: Tier): { readonly value: string | undefined; readonly stripped: readonly string[] } {
+export function retargetBetas(header: string | undefined, to: Tier, model?: string): { readonly value: string | undefined; readonly stripped: readonly string[] } {
   if (header === undefined) return { value: undefined, stripped: [] };
-  const rules = STRIP_BETAS.filter((r) => r.to === to);
+  const rules = STRIP_BETAS.filter((r) => r.to === to && !(r.exceptModel !== undefined && model?.toLowerCase().includes(r.exceptModel)));
   const parts = header.split(",").map((x) => x.trim()).filter(Boolean);
   const stripped = parts.filter((b) => rules.some((r) => b.startsWith(r.prefix)));
   if (stripped.length === 0) return { value: header, stripped: [] };
@@ -104,6 +144,7 @@ export function retargetBetas(header: string | undefined, to: Tier): { readonly 
  * on side calls so far (fixtures interactive.title-generation, ultracode.main-side-no-tools), which are not routed.
  */
 const REJECTS_DISABLED_THINKING: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5"];
+const DISABLED_THINKING_NEEDS_HIGH_OR_LESS: readonly string[] = ["claude-haiku-5-5"];
 const REJECTS_FORCED_TOOL_CHOICE: readonly string[] = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"];
 const matches = (list: readonly string[], model: string): boolean => list.some((m) => model.toLowerCase().includes(m));
 
@@ -204,6 +245,10 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
   if (!Array.isArray(b["messages"])) return { ok: false, reason: "no_messages" };
   const th0 = b["thinking"];
   if (isObj(th0) && th0["type"] === "disabled" && matches(REJECTS_DISABLED_THINKING, opts.model)) return { ok: false, reason: "thinking_disabled_rejected" };
+  // Haiku 5.5 takes disabled thinking only at effort high or below: "output_config.effort 'xhigh' is not supported when
+  // thinking is disabled on this model" (2.1.293 caps probe, with a Sonnet 5.5 control that rejects it at every level).
+  const eff0 = isObj(b["output_config"]) ? b["output_config"]["effort"] : undefined;
+  if (isObj(th0) && th0["type"] === "disabled" && (eff0 === "xhigh" || eff0 === "max") && matches(DISABLED_THINKING_NEEDS_HIGH_OR_LESS, opts.model)) return { ok: false, reason: "thinking_disabled_rejected" };
   const tc = b["tool_choice"];
   if (isObj(tc) && (tc["type"] === "any" || tc["type"] === "tool") && matches(REJECTS_FORCED_TOOL_CHOICE, opts.model)) return { ok: false, reason: "forced_tool_choice_rejected" };
   const fields: string[] = [];
@@ -211,13 +256,15 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
   b["model"] = opts.model;
   fields.push("model");
 
-  if (typeof b["max_tokens"] === "number" && b["max_tokens"] > MAX_OUTPUT_TOKENS[opts.to]) {
-    b["max_tokens"] = MAX_OUTPUT_TOKENS[opts.to];
+  const caps = capsOf(opts.to, opts.model);
+  const maxOut = maxOutputTokens(opts.to, opts.model);
+  if (typeof b["max_tokens"] === "number" && b["max_tokens"] > maxOut) {
+    b["max_tokens"] = maxOut;
     fields.push("max_tokens");
   }
 
   const oc = b["output_config"];
-  if (!ACCEPTS_EFFORT[opts.to] && isObj(oc) && "effort" in oc) {
+  if (!caps.effort && isObj(oc) && "effort" in oc) {
     const rest = Object.fromEntries(Object.entries(oc).filter(([k]) => k !== "effort"));
     if (Object.keys(rest).length > 0) b["output_config"] = rest;
     else delete b["output_config"];
@@ -227,20 +274,20 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
   const th = b["thinking"];
   if (isObj(th)) {
     const display = th["display"];
-    if (STYLE[opts.to] === "budget" && th["type"] === "adaptive") {
+    if (caps.style === "budget" && th["type"] === "adaptive") {
       const max = typeof b["max_tokens"] === "number" ? b["max_tokens"] : HAIKU_THINKING_BUDGET + 1;
       const budget = Math.min(HAIKU_THINKING_BUDGET, max - 1);
       if (budget < MIN_THINKING_BUDGET) return { ok: false, reason: "thinking_budget_too_small" };
       b["thinking"] = { type: "enabled", budget_tokens: budget, ...(display !== undefined ? { display } : {}) };
       fields.push("thinking");
-    } else if (STYLE[opts.to] === "adaptive" && th["type"] === "enabled") {
+    } else if (caps.style === "adaptive" && th["type"] === "enabled") {
       b["thinking"] = { type: "adaptive", ...(display !== undefined ? { display } : {}) };
       fields.push("thinking");
     }
   }
 
   let messages = (b["messages"] as unknown[]).filter(isObj);
-  if (!ACCEPTS_TOOL_CHANGES[opts.to] && messages.some((m) => m["role"] === "system")) {
+  if (!caps.toolChanges && messages.some((m) => m["role"] === "system")) {
     const lifted = liftToolAdditions(messages);
     if (lifted === null) return { ok: false, reason: "system_block_unfoldable" };
     messages = lifted.messages;
@@ -263,12 +310,12 @@ export function retarget(body: Buffer, opts: RewriteOptions): RewriteResult {
       if (appended.length > 0) fields.push(`tools.defined:${appended.length}`);
     }
   }
-  if (!ACCEPTS_SYSTEM_MESSAGES[opts.to] && messages.some((m) => m["role"] === "system")) {
+  if (!caps.systemMessages && messages.some((m) => m["role"] === "system")) {
     const r = foldSystemMessages(messages);
     messages = r.messages;
     fields.push(`messages.system_folded:${r.folded}`);
   }
-  const keepsMessageOutputConfig = ACCEPTS_MESSAGE_OUTPUT_CONFIG[opts.to] || matches(MESSAGE_OUTPUT_CONFIG_MODELS, opts.model);
+  const keepsMessageOutputConfig = caps.messageOutputConfig || matches(MESSAGE_OUTPUT_CONFIG_MODELS, opts.model);
   if (!keepsMessageOutputConfig && messages.some((m) => m["role"] === "system" && isObj(m["output_config"]) && "effort" in m["output_config"])) {
     // Only the per-turn effort goes (the key the target rejects); any other key stays, and the object goes only when
     // effort was all it held (every observed request so far).

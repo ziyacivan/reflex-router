@@ -13,9 +13,15 @@ export const FAST_TIMINGS: Partial<Timings> = {
   probeIntervalMs: 100, probeTimeoutMs: 200, probeMissLimit: 2, backoffInitialMs: 50, backoffMaxMs: 200, crashWindowMs: 60_000, crashLimit: 3, passthroughMs: 500, readyTimeoutMs: 15_000,
 };
 
-/** Defaults exactly as loadConfig({}) produces them, plus a fake key and a fresh temp home. */
+/**
+ * Defaults as loadConfig produces them, plus a fake key and a fresh temp home, except the Haiku model: most route tests
+ * were written for Haiku 4.5's full rewrite (budget thinking, folded system messages, a stripped beta), which is still a
+ * supported target, so they keep it. The built-in default, Haiku 5.5, is covered where `over.models` leaves it alone
+ * (`testConfig(url, { models: DEFAULT_MODELS })`).
+ */
+export const HAIKU_45 = "claude-haiku-4-5-20251001";
 export const testConfig = (upstreamUrl: string, over: Partial<Config> = {}): Config => {
-  const loaded = loadConfig({ REFLEX_UPSTREAM_URL: upstreamUrl });
+  const loaded = loadConfig({ REFLEX_UPSTREAM_URL: upstreamUrl, REFLEX_MODEL_HAIKU: HAIKU_45 });
   if (!loaded.ok) throw new Error(loaded.errors.join("; "));
   return { ...loaded.config, home: fs.mkdtempSync(path.join(os.tmpdir(), "reflex-home-")), typesafeApiKey: "apikey_test", ...over };
 };

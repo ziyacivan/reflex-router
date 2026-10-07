@@ -136,7 +136,9 @@ describe("effort on the wire", () => {
     assert.equal(messageEffort("claude-fable-5-1")?.top, false);
     assert.equal(effortVia("claude-sonnet-5", true), "top-level");
     assert.equal(effortVia("claude-sonnet-5", false), null, "a top-level change rewrites Sonnet's whole cache");
-    assert.equal(effortVia("claude-haiku-4-5-20251001", true), null);
+    assert.equal(effortVia("claude-haiku-4-5-20251001", true), null, "Haiku 4.5 takes no effort");
+    assert.equal(effortVia("claude-haiku-5-5", false), "message", "Haiku 5.5: the message changes the level with the cache kept (2.1.293)");
+    assert.equal(messageEffort("claude-haiku-5-5")?.top, false, "a top-level change rewrites its messages cache");
     for (const m of ["claude-sonnet-5-5", "claude-sonnet-5-5[1m]"]) {
       assert.equal(effortVia(m, false), "message", m);
       assert.equal(messageEffort(m)?.top, false, "a top-level change rewrites Sonnet 5.5's messages cache");

@@ -848,3 +848,54 @@ measured, so 93% may be near the ceiling. Permutations show the plain answer lea
 cheapest first, and Jev's labels lean the same way. *Conditions:* synthetic English tasks, one machine, one day, a
 thin adapter written by us, no real prompts sent. *Open:* real traffic (the owner's prompts were not sent to a new
 provider), 502 frequency over longer periods, and a keep-alive client's latency.
+
+## 2026-10-07 — Haiku 5.5 as the built-in Haiku model: 60 of 60 graded runs correct, routed or native; a small suite, not a proof
+
+**Question.** Is Claude Haiku 5.5 adequate for the work reflex sends to the Haiku tier, and does it matter that reflex hands it
+Sonnet's prompt (a retarget changes only `model`) where Claude Code itself builds a Haiku-specific one? (Claude Code's catalog
+lists `lean_prompt` and `haiku_5_5_early_stopping_guidance` for it.)
+
+**Method.** `scripts/spike/token-compare/run.mts`, the 20 tasks of `tasks.json` over the Python sandbox, 3 repetitions, Claude
+Code 2.1.293 and the user's own settings (model setting `sonnet`, no `--model` except in the native arm), each run one
+`claude -p` through the built reflex with a fixed fake Jev (so the tier is the arm's, not a judgement). Four arms, interleaved
+per task: `sonnet55` (control: Sonnet 5.5 kept), `haiku45` and `haiku55` (every request routed Sonnet 5.5 -> Haiku, the target
+set by `REFLEX_MODEL_HAIKU`), `haiku55native` (`--model claude-haiku-5-5`, shadow mode: Claude Code's own Haiku 5.5 prompt).
+13 tasks change files and are checked by running something (tests, an import, a CLI call, a grep); the other 7 only read, so
+a second round (84 runs, `tasks-answers.json`) reads each final answer and grades it by regular expressions written from the
+sandbox's real facts (for example `Inventory.total_value` returns 3, not 3.75, for three items at 1.25; `export_csv` writes `;`
+and the parser reads `,`; `models.py` has 29 non-empty lines). Only verdicts and counts are recorded, never answer text.
+Results: `test/fixtures/experiments/2.1.293/quality.*.runs.jsonl`. Cost at list prices about $9.5 (the dollar figures below are
+list-price estimates over recorded token counts; a subscription is not billed per token).
+
+**Result** (240 graded runs, 60 per arm):
+
+| arm | correct | rate (95% Wilson) | $ per run | requests | output tokens | seconds |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sonnet 5.5 (control) | 56/60 | 93% (84-97%) | $0.070 | 4.8 | 1,241 | 17 |
+| Haiku 4.5, routed | 59/60 | 98% (91-100%) | $0.061 | 9.0 | 2,752 | 32 |
+| **Haiku 5.5, routed** | **60/60** | **100% (94-100%)** | **$0.005** | 5.9 | 2,577 | 17 |
+| Haiku 5.5, native prompt | 60/60 | 100% (94-100%) | $0.005 | 5.7 | 2,526 | 17 |
+
+**What it says.** (1) Haiku 5.5 got every graded run right, and the routed form (Sonnet's prompt on Haiku 5.5) did as well
+as Claude Code's own Haiku prompt, with the same request count and cost: on this suite the prompt it is handed does not hurt.
+(2) It cost about a fourteenth of a Sonnet 5.5 run and a twelfth of a Haiku 4.5 run at list price, took the same wall time as
+Sonnet and half of Haiku 4.5's, and uses about twice Sonnet's output tokens and one more request per task: it is more
+thorough and cheaper per token, not cheaper per token and shorter. (3) Haiku 4.5's one miss was real (it counted 34 and 15
+lines where the files have 29 and 14).
+
+**What it does not say.** The control's 4 misses are *not* evidence that Haiku 5.5 is better than Sonnet. Two repetitions of
+`rename-qty` failed for a check stricter than the prompt: Sonnet renamed the field `Item.qty` everywhere and kept the local
+parameter names `qty`, which the check's `grep \bqty\b` rejects (reproduced and read); the 2 misses of `type-hints` were not
+reproduced in three further runs and are not explained. The suite is small and easy (a 5-file Python project, at most ten
+requests), 60 runs per arm can only exclude a failure rate above about 6%, and a pass/fail check or a regex is not a review of
+an answer's depth (spot reads of passing answers found them correct and detailed). The grader was corrected once after reading
+the 3 answers it had failed: two were correct answers its patterns did not match ("converted to int", "aren't consistent"),
+so those patterns were widened and **all 84 saved answers re-graded with the same rule** (the third, Haiku 4.5's miscount, is a
+true failure); only passing answers from the pilot and four of the final round were read by eye. Hard work (long refactors,
+ambiguous debugging, long contexts: the 150k routing ceiling stays for lack of any measurement deeper than that) was not
+tested, and what Jev sends to Haiku is decided by the backend and the reasoning-demand veto of `src/policy.ts`, which was not
+changed for Haiku 5.5.
+
+**Decision.** Haiku 5.5 is the built-in Haiku model from 0.11.0. `REFLEX_MODEL_HAIKU=claude-haiku-4-5-20251001` keeps the old
+one. The next thing to watch is real sessions: `reflex report` section 13 (escalations) and the outcome signals on turns
+that ran on Haiku 5.5.

@@ -1,0 +1,114 @@
+[
+  {
+    "id": "explain-total",
+    "prompt": "What does Inventory.total_value return for an inventory holding 3 items at 1.25 each? Answer briefly.",
+    "check": "git diff --quiet",
+    "answer": {
+      "all": [
+        "\\b3\\b(?!\\.\\d)"
+      ],
+      "anyOf": {
+        "min": 1,
+        "of": [
+          "int\\(",
+          "trunc",
+          "whole",
+          "round",
+          "floor",
+          "integer",
+          "\\bint\\b"
+        ]
+      }
+    }
+  },
+  {
+    "id": "failing-tests",
+    "prompt": "Run the test suite and tell me which tests fail and why. Do not change any file.",
+    "check": "git diff --quiet",
+    "answer": {
+      "all": [
+        "test_name_is_trimmed",
+        "strip|trim|whitespace|spaces|leading|padd"
+      ]
+    }
+  },
+  {
+    "id": "where-csv",
+    "prompt": "Where is CSV export implemented, and which delimiter does it write? Is that consistent with how the parser reads files?",
+    "check": "git diff --quiet",
+    "answer": {
+      "all": [
+        "report\\.py",
+        "semicolon|;",
+        "inconsisten|not consistent|doesn.t match|does not match|mismatch|differ|not compatible|incompatible|cannot read|can.t read|won.t parse|fail|aren.t consistent|isn.t consistent|not .{0,12}consistent|can.t be read|can.t read|cannot be read"
+      ]
+    }
+  },
+  {
+    "id": "loc-count",
+    "prompt": "How many non-empty lines does each .py file under inventory/ have? Give a short table.",
+    "check": "git diff --quiet",
+    "answer": {
+      "all": [
+        "models\\.py[^\\n]*\\b29\\b",
+        "parse\\.py[^\\n]*\\b14\\b",
+        "report\\.py[^\\n]*\\b11\\b",
+        "__init__\\.py[^\\n]*\\b1\\b"
+      ]
+    }
+  },
+  {
+    "id": "restock-vs-add",
+    "prompt": "Explain the difference between Inventory.add and Inventory.restock, and whether restock has a bug.",
+    "check": "git diff --quiet",
+    "answer": {
+      "all": [
+        "overwrit|replac|sets? (the )?(qty|quantity|stock)|assign|instead of (adding|increment)|rather than (adding|increment)|not (add|increment)"
+      ],
+      "anyOf": {
+        "min": 1,
+        "of": [
+          "bug",
+          "yes",
+          "likely",
+          "probably",
+          "incorrect",
+          "wrong",
+          "KeyError"
+        ]
+      }
+    }
+  },
+  {
+    "id": "review-models",
+    "prompt": "Review inventory/models.py and list at most three concrete problems, most important first. No code changes.",
+    "check": "git diff --quiet",
+    "answer": {
+      "anyOf": {
+        "min": 2,
+        "of": [
+          "total_value[^\\n]*(int|trunc)|(int|trunc)[^\\n]*total_value",
+          "average_price|ZeroDivision|empty inventory|divid",
+          "remove[^\\n]*(negative|KeyError|more than|guard|insufficient|stock)|(negative|KeyError)[^\\n]*remove",
+          "restock[^\\n]*(overwrit|replac|set|KeyError|unknown|missing)",
+          "alias|same object|mutat|shared"
+        ]
+      }
+    }
+  },
+  {
+    "id": "subagent-coverage",
+    "prompt": "Use a subagent (the Agent tool) to find which public functions and methods have no test at all, then give me the list.",
+    "check": "git diff --quiet",
+    "answer": {
+      "all": [
+        "restock",
+        "remove",
+        "average_price",
+        "find_by_tag",
+        "format_report",
+        "export_csv"
+      ]
+    }
+  }
+]

@@ -576,3 +576,46 @@ describe("route mode: the upgrade follows the backend's own answer", () => {
     }
   });
 });
+
+describe("route mode: Haiku 5.5, the built-in Haiku model", () => {
+  let jev: FakeJev;
+  let stack: Stack;
+  const opus = (b: Json): void => {
+    b["model"] = "claude-opus-5";
+  };
+  before(async () => {
+    jev = await startFakeJev({ kind: "answer", tier: "haiku", confidence: 0.99, reasoning: 0.2 });
+    // The suite's own stack pins Haiku 4.5; here `models` is the built-in table.
+    stack = await startStack({ effectiveMode: "route", config: { mode: "route", jevBaseUrl: jev.url, jevDeadlineMs: 500, models: DEFAULT_MODELS } });
+    stack.upstream.setHandler(sseHandler);
+  });
+  after(async () => {
+    await stack.close();
+    await jev.close();
+  });
+
+  it("the built-in Haiku model is Haiku 5.5", () => {
+    assert.equal(DEFAULT_MODELS.haiku, "claude-haiku-5-5");
+  });
+
+  it("a subagent goes to Haiku 5.5 with only the model swapped: no budget thinking, effort and system messages kept", async () => {
+    const n = stack.upstream.seen.length;
+    const f = inSession(fx("subagent-new-turn"), "s-h55-1", opus);
+    const { rec } = await replay(stack, f);
+    assert.deepEqual(rec.forwarded, { requested_model: "claude-opus-5", model: "claude-haiku-5-5", rewritten: true, fields: ["model"], fallback: false, fallback_status: null, fallback_error: null });
+    const orig = JSON.parse(f.body.toString()) as Json;
+    assert.deepEqual({ ...sentBody(stack, n), model: "claude-opus-5" }, orig, "nothing but the model changed");
+    const c = await replay(stack, inSession(fx("subagent-continuation"), "s-h55-1", opus));
+    assert.equal(c.rec.pin, "hit");
+    assert.equal(sentBody(stack, n + 1)["model"], "claude-haiku-5-5");
+  });
+
+  it("the long-context beta stays on a request retargeted to Haiku 5.5 (it is stripped for Haiku 4.5)", async () => {
+    const f = inSession(fixtures.find((x) => x.file === "interactive-opus1m.main-new-turn.request.json")!, "s-h55-1m");
+    const n = stack.upstream.seen.length;
+    const { rec } = await replay(stack, f);
+    assert.equal(rec.forwarded.model, "claude-haiku-5-5");
+    assert.equal(String(stack.upstream.seen[n]!.headers["anthropic-beta"]), String(f.headers["anthropic-beta"]));
+    assert.ok(!rec.forwarded.fields.some((x) => x.startsWith("anthropic-beta:")));
+  });
+});

@@ -116,7 +116,7 @@ reflex report
     rates: correction > 0 in 14.1% of scored; test failure 14.9% and revert 3.6% of windows with edits
 
 8. Cost at list prices (estimate)
-  ESTIMATE at list prices (src/pricing.ts, last verified 2026-10-07): the same token counts priced at the model sent vs the model requested.
+  ESTIMATE at list prices (src/pricing.ts, last verified 2026-10-08): the same token counts priced at the model sent vs the model requested.
   That assumes the requested model would have used the same tokens; it does not (Sonnet 5 wrote 2.7x Opus 5.5's output on the same tasks, observations.md). The measured line below replaces it where REFLEX_AB ran.
   Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
   The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
@@ -165,28 +165,28 @@ reflex report
 
   candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction), at both cache TTLs since the log does not record one for these calls, or records both:
     tier    ceiling  TTL  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
-    haiku   150,000   5m     2,373             -          $70.71     $69.13          $1.58        $1.03
-    haiku   150,000   1h     2,373             -          $84.07    $107.67      $-23.6000     $-2.1050
-    sonnet     none   5m     2,373             -          $70.71    $138.26      $-67.5504     $-8.2538
-    sonnet     none   1h     2,373             -          $84.07    $215.33     $-131.2667    $-16.4922
+    haiku   150,000   5m     2,373             -          $70.71      $6.91         $63.80        $9.39
+    haiku   150,000   1h     2,373             -          $84.07     $10.77         $73.30       $10.84
+    sonnet     none   5m     2,373             -          $70.71    $133.71      $-63.0023     $-7.5267
+    sonnet     none   1h     2,373             -          $84.07    $210.79     $-126.7186    $-15.7652
 
   haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
     side kind     routable  warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at tier  $ saved
-    notification       808   549   259             -  33,637,116       96.3%     40 s          $24.35     $23.79  $0.5585
-    suggestion         790   530   260             -  32,484,998       96.3%     40 s          $23.61     $23.46  $0.1475
-    no_tools           775   552   223             -  30,811,499       96.1%     40 s          $22.75     $21.88  $0.8742
-    notification: 2.1 warm per cold against break-even 3.1 - BELOW it, saves $0.5585
-    suggestion: 2.0 warm per cold against break-even 3.1 - BELOW it, saves $0.1475
-    no_tools: 2.5 warm per cold against break-even 3.1 - BELOW it, saves $0.8742
+    notification       808   549   259             -  33,637,116       96.3%     40 s          $24.35      $2.38   $21.97
+    suggestion         790   530   260             -  32,484,998       96.3%     40 s          $23.61      $2.35   $21.27
+    no_tools           775   552   223             -  30,811,499       96.1%     40 s          $22.75      $2.19   $20.56
+    notification: 2.1 warm per cold against break-even 0.3, saves $21.97
+    suggestion: 2.0 warm per cold against break-even 0.3, saves $21.27
+    no_tools: 2.5 warm per cold against break-even 0.3, saves $20.56
 
   sonnet (ceiling none; TTL per request, none recorded so 5m assumed):
     side kind     routable  warm  cold  over ceiling      tokens  cache read  gap p50  $ at requested  $ at tier    $ saved
-    notification       808   549   259             -  33,637,116       96.3%     40 s          $24.35     $47.58  $-23.2314
-    suggestion         790   530   260             -  32,484,998       96.3%     40 s          $23.61     $46.93  $-23.3173
-    no_tools           775   552   223             -  30,811,499       96.1%     40 s          $22.75     $43.75  $-21.0017
-    notification: 2.1 warm per cold against break-even 8.3 - BELOW it, COSTS $23.23
-    suggestion: 2.0 warm per cold against break-even 8.3 - BELOW it, COSTS $23.32
-    no_tools: 2.5 warm per cold against break-even 8.3 - BELOW it, COSTS $21.00
+    notification       808   549   259             -  33,637,116       96.3%     40 s          $24.35     $45.98  $-21.6360
+    suggestion         790   530   260             -  32,484,998       96.3%     40 s          $23.61     $45.43  $-21.8190
+    no_tools           775   552   223             -  30,811,499       96.1%     40 s          $22.75     $42.30  $-19.5473
+    notification: 2.1 warm per cold against break-even 6.3 - BELOW it, COSTS $21.64
+    suggestion: 2.0 warm per cold against break-even 6.3 - BELOW it, COSTS $21.82
+    no_tools: 2.5 warm per cold against break-even 6.3 - BELOW it, COSTS $19.55
 
   exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
   conversations ever pinned below requested: 666 of 750

@@ -139,7 +139,7 @@ reflex report
   harness_injected records: 1
 
 8. Cost at list prices (estimate)
-  ESTIMATE at list prices (src/pricing.ts, last verified 2026-10-07): the same token counts priced at the model sent vs the model requested.
+  ESTIMATE at list prices (src/pricing.ts, last verified 2026-10-08): the same token counts priced at the model sent vs the model requested.
   That assumes the requested model would have used the same tokens; it does not (Sonnet 5 wrote 2.7x Opus 5.5's output on the same tasks, observations.md). The measured line below replaces it where REFLEX_AB ran.
   Not modelled: tokenizer differences between models, cache TTL (writes priced at the 5-minute rate), discounts, subscription limits.
   The requested-model figure prices the routed model's cache writes as writes on the requested model too, although its cache was usually already warm from side calls (observations.md, cache cost model), so it overstates what staying would have cost.
@@ -187,24 +187,24 @@ reflex report
 
   candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction), at both cache TTLs since the log does not record one for these calls, or records both:
     tier    ceiling  TTL  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
-    haiku   150,000   5m         3             -         $0.1968    $0.1797        $0.0171      $0.0125
-    haiku   150,000   1h         3             -         $0.2748    $0.2868       $-0.0120     $-0.0009
-    sonnet     none   5m         3             -         $0.1968    $0.3593       $-0.1625     $-0.0783
-    sonnet     none   1h         3             -         $0.2748    $0.5735       $-0.2987     $-0.1455
+    haiku   150,000   5m         3             -         $0.1968    $0.0180        $0.1788      $0.0942
+    haiku   150,000   1h         3             -         $0.2748    $0.0287        $0.2461      $0.1293
+    sonnet     none   5m         3             -         $0.1968    $0.3584       $-0.1616     $-0.0774
+    sonnet     none   1h         3             -         $0.2748    $0.5726       $-0.2978     $-0.1446
 
   haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
     side kind   routable  warm  cold  over ceiling   tokens  cache read  gap p50
     suggestion         2     0     2             -  142,844       91.7%        -
     no_tools           1     1     0             -    9,011        0.0%      1 s
-    suggestion: 0.0 warm per cold against break-even 3.1 - BELOW it, COSTS $0.0384
-    no_tools: 0.0% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0556
+    suggestion: 0.0 warm per cold against break-even 0.3 - BELOW it, saves $0.1224
+    no_tools: 0.0% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0564
 
   sonnet (ceiling none; TTL per request, none recorded so 5m assumed):
     side kind   routable  warm  cold  over ceiling   tokens  cache read  gap p50
     suggestion         2     0     2             -  142,844       91.7%        -
     no_tools           1     1     0             -    9,011        0.0%      1 s
-    suggestion: 0.0 warm per cold against break-even 8.3 - BELOW it, COSTS $0.2171
-    no_tools: 0.0% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0546
+    suggestion: 0.0 warm per cold against break-even 6.3 - BELOW it, COSTS $0.2171
+    no_tools: 0.0% cache read - little prefix to lose, the amortisation rule does not apply; saves $0.0555
     (rerun with --usd for the per-kind dollar columns)
 
   exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).

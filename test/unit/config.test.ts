@@ -50,6 +50,11 @@ describe("loadConfig", () => {
     assert.equal(load({ REFLEX_UPSTREAM_URL: "", ANTHROPIC_BASE_URL: "" }).config.upstreamUrl, DEFAULT_UPSTREAM);
   });
 
+  it("the built-in Haiku model is Haiku 5.5; REFLEX_MODEL_HAIKU keeps Haiku 4.5", () => {
+    assert.equal(load({}).config.models.haiku, "claude-haiku-5-5");
+    assert.equal(load({ REFLEX_MODEL_HAIKU: "claude-haiku-4-5-20251001" }).config.models.haiku, "claude-haiku-4-5-20251001");
+  });
+
   it("treats empty REFLEX_* values as unset: defaults, and the ANTHROPIC_DEFAULT_*_MODEL fallback", () => {
     const { config } = load({ REFLEX_JEV_DEADLINE_MS: "", REFLEX_TIERS: "", REFLEX_MODEL_HAIKU: "", ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-x" });
     assert.equal(config.jevDeadlineMs, load({}).config.jevDeadlineMs);

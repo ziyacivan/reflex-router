@@ -62,6 +62,8 @@ let probe1m = false;
 let probeEfforts = false;
 /** Also send the main-new request, padded to route mode's Haiku context ceiling (estimated tokens), to Haiku. */
 let probeCeiling = false;
+/** --ceiling-tokens N: pad to N estimated tokens instead of the Haiku routing ceiling (does the target take a window larger than 200k?). */
+let ceilingTokens = null;
 /** Let each subagent's first request through unchanged, so its second request holds a source-model turn; decide there. */
 let delayPin = false;
 /** Run the TUI in a pseudo-terminal (scripts/spike/pty-run.py), type the -p prompt, and /exit after this many seconds. */
@@ -96,6 +98,13 @@ let probeEffortSwitch = false;
  */
 let probeToolDefs = false;
 /**
+ * --probe-caps <model-id>: what a model takes, one request shape at a time, each sent to <model-id> from the live main
+ * chat's first request (Sonnet 5.5's own shape: adaptive thinking, top-level + per-message effort, a trailing system
+ * message, max_tokens 128000) and, where it matters, from its first continuation (tool_addition blocks by definition).
+ * Nothing is rewritten by the product code: this learns what a rewrite must produce. Probes stop at message_start.
+ */
+let probeCaps = null;
+/**
  * Main chat only, no model change: does a changed effort actually change how much the model thinks, when the system
  * message at index 1 still carries the client's effort? At the first continuation a fixed synthetic puzzle (never user
  * text) is appended to the last user message and the request is sent to the END (full answer, max_tokens clamped to
@@ -115,7 +124,7 @@ const EFFORT_APPLY_MAX_TOKENS = 16000;
  * "drop_block". The session's prompt must make the model think between tool calls, or there is nothing to check.
  */
 let probeEffortVerify = false;
-/** --effort-verify-parts opus-5,fable-5.1,sonnet-5.5,sonnet,binding | binding-set (alone): run only these parts (each Opus 5 / Fable part costs a cache write). */
+/** --effort-verify-parts opus-5,fable-5.1,sonnet-5.5,haiku-5.5 (needs --model haiku=claude-haiku-5-5),sonnet,binding | binding-set (alone): run only these parts (each Opus 5 / Fable part costs a cache write). */
 let verifyParts = new Set(["opus-5", "fable-5.1", "sonnet", "binding"]);
 /** Part binding-set only: run the live main chat (and its probes) on this tier instead (e.g. fable: the product's retarget). */
 let bindingTier = null;
@@ -135,12 +144,14 @@ for (let i = 0; i < argv.length; i++) {
   else if (argv[i] === "--probe-1m") probe1m = true;
   else if (argv[i] === "--probe-efforts") probeEfforts = true;
   else if (argv[i] === "--probe-ceiling") probeCeiling = true;
+  else if (argv[i] === "--ceiling-tokens") ceilingTokens = Number(argv[++i]);
   else if (argv[i] === "--delay-pin") delayPin = true;
   else if (argv[i] === "--interactive") interactiveExitS = Number(argv[++i]);
   else if (argv[i] === "--lean") lean = true;
   else if (argv[i] === "--probe-message-oc") probeMessageOc = true;
   else if (argv[i] === "--probe-effort-switch") probeEffortSwitch = true;
   else if (argv[i] === "--probe-tool-defs") probeToolDefs = true;
+  else if (argv[i] === "--probe-caps") probeCaps = argv[++i];
   else if (argv[i] === "--probe-effort-apply") probeEffortApply = true;
   else if (argv[i] === "--probe-effort-verify") probeEffortVerify = true;
   else if (argv[i] === "--effort-verify-parts") verifyParts = new Set(argv[++i].split(","));
@@ -239,7 +250,7 @@ function productHeaders(headers, body) {
   try { model = JSON.parse(body.toString("utf8")).model; } catch { return { headers, stripped: [] }; }
   const tier = Object.keys(MODELS).find((k) => MODELS[k] === model);
   if (!tier || tier === from) return { headers, stripped: [] };
-  const b = retargetBetas(headers["anthropic-beta"], tier);
+  const b = retargetBetas(headers["anthropic-beta"], tier, MODELS[tier]);
   return b.stripped.length === 0 ? { headers, stripped: [] } : { headers: { ...headers, "anthropic-beta": b.value }, stripped: b.stripped };
 }
 
@@ -274,7 +285,7 @@ const FILLERS = {
   lockfile: readFileSync(join(import.meta.dirname, "..", "..", "package-lock.json"), "utf8"),
 };
 async function ceilingProbes(req, raw, headers, facts) {
-  const ceiling = CONTEXT_CEILING.haiku;
+  const ceiling = ceilingTokens ?? CONTEXT_CEILING.haiku;
   for (const [kind, unit] of Object.entries(FILLERS)) {
     const b = JSON.parse(raw.toString("utf8"));
     const last = [...b.messages].reverse().find((m) => m.role === "user");
@@ -361,7 +372,7 @@ async function effortVerify(req, raw, headers, parsed, facts, view) {
   if (view.turn !== "continuation") {
     if (vs.prev) return { body: raw, headers, note: "main-new passthrough (effort-verify, later)" };
     vs.prev = raw;
-    for (const [label, make] of [["opus-5", () => variantBody(parsed, (b) => { b.model = "claude-opus-5"; })], ["fable-5.1", () => { const r = rt(raw, "fable"); return r.ok ? r.body : null; }], ["sonnet-5.5", () => { const r = rt(raw, "sonnet"); return r.ok ? r.body : null; }]]) {
+    for (const [label, make] of [["opus-5", () => variantBody(parsed, (b) => { b.model = "claude-opus-5"; })], ["fable-5.1", () => { const r = rt(raw, "fable"); return r.ok ? r.body : null; }], ["sonnet-5.5", () => { const r = rt(raw, "sonnet"); return r.ok ? r.body : null; }], ["haiku-5.5", () => { const r = rt(raw, "haiku"); return r.ok ? r.body : null; }]]) {
       if (!verifyParts.has(label)) continue;
       const base = make();
       if (!base) continue;
@@ -369,8 +380,8 @@ async function effortVerify(req, raw, headers, parsed, facts, view) {
       await probe(`${label}: first request (cache write)`, req.url, headers, base, ["model"], f, { keepHeaders: true });
       await probe(`${label}: + effort message low (accepted? cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.messages.push(effortMsg("low")); b.output_config = { ...b.output_config, effort: "low" }; }), ["model", "messages.effort_added"], f, { keepHeaders: true });
       await probe(`${label}: + effort message low, top-level unchanged (cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.messages.push(effortMsg("low")); }), ["model", "messages.effort_added"], f, { keepHeaders: true });
-      if (label === "sonnet-5.5") await probe(`${label}: top-level low only, no message (cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.output_config = { ...b.output_config, effort: "low" }; }), ["model", "output_config.effort"], f, { keepHeaders: true });
-      const topOnly = label === "sonnet-5.5" ? [["top-level only low", (b) => { b.output_config = { ...b.output_config, effort: "low" }; }], ["top-level only max", (b) => { b.output_config = { ...b.output_config, effort: "max" }; }]] : [];
+      if (label === "sonnet-5.5" || label === "haiku-5.5") await probe(`${label}: top-level low only, no message (cache kept?)`, req.url, headers, variantBody(pb, (b) => { b.output_config = { ...b.output_config, effort: "low" }; }), ["model", "output_config.effort"], f, { keepHeaders: true });
+      const topOnly = label === "sonnet-5.5" || label === "haiku-5.5" ? [["top-level only low", (b) => { b.output_config = { ...b.output_config, effort: "low" }; }], ["top-level only max", (b) => { b.output_config = { ...b.output_config, effort: "max" }; }]] : [];
       for (const [v, mut] of [[`client effort (${pb.output_config?.effort})`, () => {}], ["message only low", (b) => { b.messages.push(effortMsg("low")); }], ["message only max", (b) => { b.messages.push(effortMsg("max")); }], ...topOnly]) {
         await probe(`${label}: puzzle, ${v}`, req.url, headers, variantBody(pb, (b) => { b.max_tokens = EFFORT_APPLY_MAX_TOKENS; withPuzzle(b); mut(b); }), ["model", "puzzle"], f, { keepHeaders: true, full: true });
       }
@@ -528,6 +539,56 @@ async function toolDefProbes(req, raw, headers, parsed, facts) {
   }
 }
 
+/** Each variant: [label, mutate(body), header edit?]. Every one starts from the same live request, model set to `model`. */
+async function capsProbes(req, headers, parsed, model, facts) {
+  const withBeta = (extra) => ({ ...headers, "anthropic-beta": `${headers["anthropic-beta"]},${extra}` });
+  const noBeta = (prefix) => ({ ...headers, "anthropic-beta": String(headers["anthropic-beta"] ?? "").split(",").filter((x) => !x.startsWith(prefix)).join(",") });
+  const sysMsg = (b) => b.messages.find((m) => m.role === "system");
+  const variants = [
+    ["model-only (Sonnet 5.5's shape)", () => {}],
+    ["thinking enabled + budget_tokens 31999", (b) => { b.thinking = { type: "enabled", budget_tokens: 31999, display: "omitted" }; }],
+    ["thinking disabled", (b) => { b.thinking = { type: "disabled" }; delete b.context_management; }],
+    ...["low", "medium", "high", "xhigh", "max"].map((l) => [`thinking disabled at effort ${l} (no context_management)`, (b) => { b.thinking = { type: "disabled" }; b.output_config = { ...b.output_config, effort: l }; delete b.context_management; }]),
+    ["thinking disabled, no output_config (no context_management)", (b) => { b.thinking = { type: "disabled" }; delete b.output_config; delete b.context_management; }],
+    ["thinking absent", (b) => { delete b.thinking; }],
+    ["thinking adaptive without display", (b) => { b.thinking = { type: "adaptive" }; }],
+    ...["low", "high", "xhigh", "max"].map((l) => [`top-level effort ${l}`, (b) => { b.output_config = { ...b.output_config, effort: l }; }]),
+    ["no output_config at all", (b) => { delete b.output_config; }],
+    ["no per-message output_config", (b) => { const m = sysMsg(b); if (m) delete m.output_config; }],
+    ["no role:system message (dropped)", (b) => { b.messages = b.messages.filter((m) => m.role !== "system"); }],
+    ["max_tokens 64000", (b) => { b.max_tokens = 64000; }],
+    ["max_tokens 200000", (b) => { b.max_tokens = 200000; }],
+    ["tool_choice any (thinking disabled, no context_management)", (b) => { b.tool_choice = { type: "any" }; b.thinking = { type: "disabled" }; delete b.context_management; }],
+    ["tool_choice tool Bash (thinking disabled, no context_management)", (b) => { b.tool_choice = { type: "tool", name: "Bash" }; b.thinking = { type: "disabled" }; delete b.context_management; }],
+    ["tool_choice any, thinking adaptive (no context_management)", (b) => { b.tool_choice = { type: "any" }; delete b.context_management; }],
+    ["temperature 1", (b) => { b.temperature = 1; }],
+    ["+ context-1m beta", () => {}, withBeta("context-1m-2025-08-07")],
+    ["- context-management beta (keeps context_management)", () => {}, noBeta("context-management-")],
+  ];
+  for (const [label, mutate, hdrs] of variants) {
+    const b = structuredClone(parsed);
+    b.model = model;
+    mutate(b);
+    await probe(`caps:${label}`, req.url, hdrs ?? headers, Buffer.from(JSON.stringify(b)), ["model"], facts, { keepHeaders: true });
+  }
+}
+
+async function capsContinuationProbes(req, headers, parsed, model, facts) {
+  const hasDefs = JSON.stringify(parsed.messages).includes('"tool_definition"');
+  const f = { ...facts, announced_by_definition: hasDefs };
+  const run = async (label, mutate) => {
+    const b = structuredClone(parsed);
+    b.model = model;
+    mutate(b);
+    await probe(`caps-cont:${label}`, req.url, headers, Buffer.from(JSON.stringify(b)), ["model"], f, { keepHeaders: true });
+  };
+  await run("model-only (tool_addition blocks kept, history as Sonnet made it)", () => {});
+  await run("history thinking dropped", (b) => {
+    b.messages = b.messages.map((m) => (m.role === "assistant" && Array.isArray(m.content) ? { ...m, content: m.content.filter((c) => c.type !== "thinking" && c.type !== "redacted_thinking") } : m));
+  });
+  await run("system messages removed (tool_addition blocks go with them)", (b) => { b.messages = b.messages.filter((m) => m.role !== "system"); });
+}
+
 async function route(req, rawIn, headers) {
   let raw = rawIn;
   if (sourceModel) {
@@ -543,6 +604,16 @@ async function route(req, rawIn, headers) {
   if (probeEffortVerify) return view.kind === "main" ? effortVerify(req, raw, headers, parsed, facts, view) : { body: raw, headers, note: "passthrough" };
   if (probeEffortApply) { if (view.kind === "main") await effortApply(req, headers, parsed, facts, view); return { body: raw, headers, note: "passthrough" }; }
   if (probeEffortSwitch) return view.kind === "main" ? effortSwitch(req, raw, headers, parsed, facts, view) : { body: raw, headers, note: "passthrough" };
+
+  if (probeCaps && !state.capsProbed && view.kind === "main" && view.turn === "new") {
+    state.capsProbed = true;
+    await capsProbes(req, headers, parsed, probeCaps, facts);
+  }
+  if (probeCaps && !state.capsContProbed && view.kind === "main" && view.turn === "continuation" && JSON.stringify(parsed.messages).includes('"tool_addition"')) {
+    state.capsContProbed = true;
+    await capsContinuationProbes(req, headers, parsed, probeCaps, facts);
+  }
+  if (probeCaps) return { body: raw, headers, note: "caps passthrough" };
 
   if (view.kind === "main" && view.turn === "new" && !state.mainNewProbed && !noMainNew) {
     state.mainNewProbed = true;

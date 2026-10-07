@@ -17,7 +17,7 @@ export const isEffort = (v: unknown): v is Effort => typeof v === "string" && (E
 /**
  * Models whose requests take an added effort message, and whether the top-level value follows it (2.1.281,
  * experiment.effort-switch / effort-apply / effort-verify): Opus 5.5 keeps its cache either way and gets both, as
- * Claude Code sends them; Opus 5, Fable 5.1 and Sonnet 5.5 get the message only, which keeps the cache and changes
+ * Claude Code sends them; Opus 5, Fable 5.1, Sonnet 5.5 and Haiku 5.5 get the message only, which keeps the cache and changes
  * the level.
  */
 const MESSAGE_EFFORT: readonly { readonly match: RegExp; readonly top: boolean }[] = [
@@ -27,13 +27,17 @@ const MESSAGE_EFFORT: readonly { readonly match: RegExp; readonly top: boolean }
   // 2.1.284, experiment.effort-verify-sonnet55: the message changes the level with the cache kept; the top-level value
   // alone does not change it, and changing it rewrites the messages cache (docs/wire-format.md §5.12).
   { match: /claude-sonnet-5-5/, top: false },
+  // 2.1.293, experiment.effort-verify-haiku55 (n = 4 runs of one puzzle): the message with the top-level value unchanged
+  // keeps the cache (0 written, 25,136 read) and changes the level (output tokens, mean: 3,153 at `low`, 3,610 at the
+  // client's `medium`, 8,896 at `max`); the top-level value alone does not (`max`: 3,242). Same as Sonnet 5.5.
+  { match: /claude-haiku-5-5/, top: false },
 ];
 export const messageEffort = (model: string | null): { readonly top: boolean } | null => (model === null ? null : (MESSAGE_EFFORT.find((m) => m.match.test(model.toLowerCase())) ?? null));
 
 /**
- * How reflex may change the level of a request to `model` this turn: by message (Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5:
+ * How reflex may change the level of a request to `model` this turn: by message (Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5, Haiku 5.5:
  * any request), by the top-level value (Sonnet 5, only when its cache is being written anyway: `cacheFresh`), or not at all
- * (Haiku takes no effort).
+ * (Haiku 4.5 takes no effort).
  */
 export function effortVia(model: string | null, cacheFresh: boolean): "message" | "top-level" | null {
   if (messageEffort(model)) return "message";

@@ -37,7 +37,8 @@ function opusRequest(name: string, sid: string, prefix = "", model = "claude-opu
 
 function harness(onQuota?: RouterDeps["onQuota"]): { send(fx: Fixture, answer: Answer | null, cacheCreate?: number, resHeaders?: Record<string, string>, delta?: Json): Promise<{ rec: DecisionRecord; sent: Json }>; calls(): number } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "reflex-router-"));
-  const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50" });
+  // Haiku 4.5: these pin and cost-guard scenarios were written for its prices; Haiku 5.5 (the default) is in guard.test.ts.
+  const loaded = loadConfig({ REFLEX_MODE: "route", TYPESAFE_API_KEY: "apikey_x", REFLEX_HOME: home, REFLEX_JEV_DEADLINE_MS: "50", REFLEX_MODEL_HAIKU: "claude-haiku-4-5-20251001" });
   assert.ok(loaded.ok);
   const config: Config = loaded.config;
   let answer: Answer | null = null;

@@ -4,28 +4,28 @@
 
   candidates (net = conversations ever pinned below the requested tier carved out, removing the warm-cache interaction), at both cache TTLs since the log does not record one for these calls, or records both:
     tier    ceiling  TTL  routable  over ceiling  $ at requested  $ at tier  $ saved gross  $ saved net
-    haiku   150,000   5m        87             -           $2.51      $1.74        $0.7749      $0.5025
-    haiku   150,000   1h        87             -           $2.78      $2.54        $0.2401      $0.0152
-    sonnet     none   5m        87             -           $2.51      $3.48       $-0.9632     $-0.8561
-    sonnet     none   1h        87             -           $2.78      $5.08       $-2.2984     $-1.9492
+    haiku   150,000   5m        87             -           $2.51    $0.1912          $2.32        $1.73
+    haiku   150,000   1h        87             -           $2.78    $0.2798          $2.50        $1.78
+    sonnet     none   5m        87             -           $2.51      $3.08       $-0.5660     $-0.5116
+    sonnet     none   1h        87             -           $2.78      $4.68       $-1.9011     $-1.6047
 
   haiku (ceiling 150,000; TTL per request, none recorded so 5m assumed):
-    side kind     routable  warm  cold  over ceiling     tokens  cache read  gap p50  $ at requested  $ at tier   $ saved
-    suggestion          38    29     9             -  3,024,636       97.9%     26 s           $1.80      $1.19   $0.6059
-    no_tools            45    30    15             -  1,705,465       96.3%     20 s         $0.5137    $0.5166  $-0.0029
-    notification         4     4     0             -    310,534       97.5%      0 s         $0.2043    $0.0324   $0.1719
-    suggestion: 3.2 warm per cold against break-even 3.1, saves $0.6059
-    no_tools: 2.0 warm per cold against break-even 3.1 - BELOW it, COSTS $0.0029
-    notification: no cold write against break-even 3.1, saves $0.1719
+    side kind     routable  warm  cold  over ceiling     tokens  cache read  gap p50  $ at requested  $ at tier  $ saved
+    suggestion          38    29     9             -  3,024,636       97.9%     26 s           $1.80    $0.1363    $1.66
+    no_tools            45    30    15             -  1,705,465       96.3%     20 s         $0.5137    $0.0517  $0.4620
+    notification         4     4     0             -    310,534       97.5%      0 s         $0.2043    $0.0032  $0.2010
+    suggestion: 3.2 warm per cold against break-even 0.3, saves $1.66
+    no_tools: 2.0 warm per cold against break-even 0.3, saves $0.4620
+    notification: no cold write against break-even 0.3, saves $0.2010
 
   sonnet (ceiling none; TTL per request, none recorded so 5m assumed):
     side kind     routable  warm  cold  over ceiling     tokens  cache read  gap p50  $ at requested  $ at tier   $ saved
-    suggestion          38    29     9             -  3,024,636       97.9%     26 s           $1.80      $2.38  $-0.5832
-    no_tools            45    30    15             -  1,705,465       96.3%     20 s         $0.5137      $1.03  $-0.5195
-    notification         4     4     0             -    310,534       97.5%      0 s         $0.2043    $0.0648   $0.1395
-    suggestion: 3.2 warm per cold against break-even 8.3 - BELOW it, COSTS $0.5832
-    no_tools: 2.0 warm per cold against break-even 8.3 - BELOW it, COSTS $0.5195
-    notification: no cold write against break-even 8.3, saves $0.1395
+    suggestion          38    29     9             -  3,024,636       97.9%     26 s           $1.80      $2.15  $-0.3576
+    no_tools            45    30    15             -  1,705,465       96.3%     20 s         $0.5137    $0.8926  $-0.3789
+    notification         4     4     0             -    310,534       97.5%      0 s         $0.2043    $0.0338   $0.1705
+    suggestion: 3.2 warm per cold against break-even 6.3 - BELOW it, COSTS $0.3576
+    no_tools: 2.0 warm per cold against break-even 6.3 - BELOW it, COSTS $0.3789
+    notification: no cold write against break-even 6.3, saves $0.1705
 
   exposure: only a conversation pinned below the requested tier can lose the free warm cache its side calls provide today (they would no longer bill the requested model).
   conversations ever pinned below requested: 6 of 32

@@ -106,6 +106,8 @@ interface ConvState {
   pin: Pin | null;
   /** Tier that last served a new/continuation request of this conversation: where its prompt cache lives. */
   cacheTier: Tier | null;
+  /** The model that last served this conversation (its cache holder), for the cost guard's prices. */
+  cacheModel: string | null;
   /** Prompt size (input + cache read + cache write) of that last response. */
   lastCtx: number | null;
   /** Sums over the responses after the first (whose cache write is the whole prompt): new tokens, output tokens, count. */
@@ -212,7 +214,7 @@ export class Router {
   #conv(s: SessionState, key: string): ConvState {
     let c = s.convs.get(key);
     if (!c) {
-      c = { pin: null, cacheTier: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 }, topEffort: null, effortFirst: null };
+      c = { pin: null, cacheTier: null, cacheModel: null, lastCtx: null, sums: { write: 0, output: 0, n: 0 }, topEffort: null, effortFirst: null };
       s.convs.set(key, c);
     }
     return c;
@@ -305,7 +307,7 @@ export class Router {
       const r = retarget(body, { from, to, model });
       if (!r.ok) return false;
       const beta = headers["anthropic-beta"];
-      const b = retargetBetas(typeof beta === "string" ? beta : undefined, to);
+      const b = retargetBetas(typeof beta === "string" ? beta : undefined, to, model);
       sendBody = r.body;
       fields = [...r.fields, ...b.stripped.map((x) => `anthropic-beta:-${x}`)];
       // Uncompressed, so the response's model can be put back (ModelRestorer); the fallback resends the client's headers.
@@ -467,6 +469,7 @@ export class Router {
                 conv.sums.n++;
               }
               conv.cacheTier = tierOfModel(sentModel);
+              conv.cacheModel = sentModel;
               conv.lastCtx = u.usage.input + u.usage.cacheRead + u.usage.cacheCreate;
             }
             const degraded = [this.d.degradedReason, this.#uaDegrade, s.shape.reason].filter(Boolean);
@@ -629,7 +632,7 @@ export class Router {
     // answer may move it above the requested tier; a downgrade still meets the guard after the decision).
     const fresh = v.facts.nonSystemMessages === 1;
     const guardFor = (to: Tier): GuardResult =>
-      guard({ cacheTier: conv?.cacheTier ?? null, to, ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd,
+      guard({ cacheTier: conv?.cacheTier ?? null, cacheModel: conv?.cacheModel ?? null, to, toModel: cfg.models[to], ctxTokens: conv?.lastCtx ?? null, ttl: v.facts.betaExtendedCacheTtl ? "1h" : "5m", fresh, maxPenaltyUsd: cfg.maxSwitchPenaltyUsd,
         perRequest: conv && conv.sums.n > 0 ? { write: conv.sums.write / conv.sums.n, output: conv.sums.output / conv.sums.n } : null, breakevenRequests: cfg.switchBreakevenRequests });
     // With REFLEX_EFFORT_MIDTURN on a model that takes the effort message the backend is asked anyway: every main-chat
     // turn's level can change without leaving the cache, and a tier move still meets the guard after the decision.
