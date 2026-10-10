@@ -6,6 +6,21 @@
 
 _Nothing yet._
 
+## 0.11.1 — 2026-10-10
+
+### Changed
+
+- Claude Code 2.1.296 is a tested version: one `claude -p` capture with a subagent (Opus 5.5, `sdk-cli`) has the same
+  request fields, betas, headers and cache settings as 2.1.293, and every request classifies and passes the shape checks.
+  2.1.294 and 2.1.295 were not captured. Pricing re-verified against Anthropic's pricing page (2026-10-10); no price changed.
+
+### Fixed
+
+- `scripts/spike/capture.mjs` (development tooling, not shipped) refuses to start when the `claude` on PATH is a script and
+  `REFLEX_CLAUDE_BIN` is not set. On a machine where `claude` starts reflex through a wrapper, a capture recorded
+  reflex-rewritten requests instead of Claude Code's own, and its session asked the decision backend and was logged in
+  `~/.reflex/decisions.jsonl`. No committed fixture was affected.
+
 ## 0.11.0 — 2026-10-08
 
 ### Changed
