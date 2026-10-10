@@ -10,12 +10,13 @@
 //   * credential headers (authorization, x-api-key, cookie, ...) are never written to disk
 //   * raw dumps contain prompts and identifiers; they live under _dumps/ (gitignored) and are
 //     turned into redacted fixtures by redact-fixtures.mjs
+//   * without REFLEX_CLAUDE_BIN, a `claude` on PATH that is a script (a wrapper that may start reflex) is refused
 //   * --cap-usd refuses to FORWARD a request once the running list-price total would cross the cap, and logs the
 //     refusal to cap-refusals.jsonl. A cap polled from outside cannot hold against a parallel fan-out.
 import http from "node:http";
 import https from "node:https";
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, appendFileSync, accessSync, statSync, openSync, readSync, closeSync, constants } from "node:fs";
 import { join } from "node:path";
 // The product's own list prices, so a cap here means the same thing a cap in a report does. Imported as .ts: needs
 // Node's type stripping (>= 22.18) or `node --import tsx`.
@@ -34,6 +35,31 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--cap-usd") capUsd = Number(argv[++i]);
   else if (a === "--") { claudeArgs.push(...argv.slice(i + 1)); break; }
   else claudeArgs.push(a);
+}
+
+// A `claude` on PATH may be a wrapper that starts reflex (a shim, or another app's wrapper in front of one): the dumps
+// would then hold reflex-rewritten requests, and the session would ask the decision backend and land in
+// ~/.reflex/decisions.jsonl (2026-10-10: model setting `opus`, dumps showed `claude-haiku-5-5`). Without an explicit
+// REFLEX_CLAUDE_BIN, refuse a `claude` that is a script; the real Claude Code is a native binary.
+if (process.env.REFLEX_CLAUDE_BIN === undefined && process.platform !== "win32") {
+  const first = (process.env.PATH ?? "").split(":").filter(Boolean).map((d) => join(d, "claude")).find((f) => {
+    try { accessSync(f, constants.X_OK); return statSync(f).isFile(); } catch { return false; }
+  });
+  if (first === undefined) {
+    process.stderr.write("[spike] no `claude` on PATH; set REFLEX_CLAUDE_BIN to the Claude Code binary\n");
+    process.exit(2);
+  }
+  const fd = openSync(first, "r");
+  const head = Buffer.alloc(2);
+  readSync(fd, head, 0, 2, 0);
+  closeSync(fd);
+  if (head.toString("latin1") === "#!") {
+    process.stderr.write(
+      `[spike] refusing: \`claude\` on PATH is a script (${first}), which may start reflex or another proxy in front of ` +
+        "Claude Code. Set REFLEX_CLAUDE_BIN to the real binary, e.g. REFLEX_CLAUDE_BIN=$HOME/.local/bin/claude\n",
+    );
+    process.exit(2);
+  }
 }
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
