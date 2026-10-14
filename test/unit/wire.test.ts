@@ -243,8 +243,8 @@ describe("shape assertions on mutated fixtures: each mutation trips exactly its 
   it("subagent_signals: cc_is_subagent without the header", () => {
     assert.deepEqual(checks(mutate(subBase, (_b, h) => delete h["x-claude-code-agent-id"])), ["subagent_signals"]);
   });
-  it("system_messages_beta: role:system messages without the beta", () => {
-    assert.deepEqual(checks(mutate(base, (_b, h) => (h["anthropic-beta"] = String(h["anthropic-beta"]).replace(/mid-conversation-system-[^,]*/, "")))), ["system_messages_beta"]);
+  it("role:system messages without the mid-conversation-system beta pass (2.1.299 stopped sending it)", () => {
+    assert.deepEqual(checks(mutate(base, (_b, h) => (h["anthropic-beta"] = String(h["anthropic-beta"]).replace(/mid-conversation-system-[^,]*/, "")))), []);
   });
   it("the optional agent-prompt marker on a main request trips subagent_signals only via its fallback classification", () => {
     const v = mutate(base, (b) => ((b["system"] as { text: string }[])[1]!.text += " You are an agent for Claude Code"));

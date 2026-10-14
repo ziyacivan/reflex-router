@@ -4,7 +4,7 @@
 import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import {
-  BETA_EXTENDED_CACHE_TTL, BETA_MID_CONVERSATION_SYSTEM, BILLING_ENTRYPOINT, HANDBACK_PROMPT_PREFIX, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
+  BETA_EXTENDED_CACHE_TTL, BILLING_ENTRYPOINT, HANDBACK_PROMPT_PREFIX, HEADER_AGENT_ID, HEADER_SESSION_ID, LOCAL_COMMAND_BLOCK,
   INJECTED_PROMPT_MARKERS, MARKER_AGENT_PROMPT, MARKER_BILLING, MARKER_SUBAGENT, PASTED_CONTENT_TAG, QUEUED_MESSAGE_MARKER, QUEUED_MESSAGE_TRAILER, SIDE_MARKERS, SYSTEM_REMINDER, TOOL_LOADED_TEXT, USER_AGENT_VERSION, type SideKind,
 } from "./markers.js";
 import { matchesTypedPrompt } from "./typed-prompt.js";
@@ -38,7 +38,6 @@ export interface ShapeFacts {
   readonly systemMessages: number;
   readonly nonSystemMessages: number;
   readonly lastNonSystemRole: string | null;
-  readonly betaMidConversationSystem: boolean;
   readonly betaExtendedCacheTtl: boolean;
   /** TTL of the request's last cache breakpoint (the one that caches the whole prefix); null: none, or a TTL not known here. */
   readonly cacheTtl: CacheTtl | null;
@@ -405,7 +404,6 @@ export function parseRequest(
         systemMessages: messages.length - nonSystem.length,
         nonSystemMessages: nonSystem.length,
         lastNonSystemRole: str(nonSystem.at(-1)?.["role"]),
-        betaMidConversationSystem: betas.some((x) => x.startsWith(BETA_MID_CONVERSATION_SYSTEM)),
         betaExtendedCacheTtl: betas.some((x) => x.startsWith(BETA_EXTENDED_CACHE_TTL)),
         cacheTtl: lastBreakpointTtl(b),
         maxTokens: typeof b["max_tokens"] === "number" ? b["max_tokens"] : null,

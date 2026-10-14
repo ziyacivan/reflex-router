@@ -2,7 +2,7 @@
 // that the traffic still looks like what the fixtures show. Any violation degrades the session to shadow.
 import type { RequestView, Signals } from "./claude-code.js";
 
-export type ShapeCheck = "session_id" | "client_identity" | "subagent_signals" | "system_messages_beta" | "turn_structure";
+export type ShapeCheck = "session_id" | "client_identity" | "subagent_signals" | "turn_structure";
 
 export interface Violation {
   readonly check: ShapeCheck;
@@ -23,7 +23,6 @@ export function assertShape(v: RequestView): Violation[] {
   // Header <=> cc_is_subagent. The agent-prompt marker is optional, but if it shows up the request must be a subagent.
   const { header, s1, s2 } = v.signals;
   if (header !== s1 || (s2 && !header && !s1)) failed.push("subagent_signals");
-  if (f.systemMessages > 0 && !f.betaMidConversationSystem) failed.push("system_messages_beta");
   if (f.nonSystemMessages === 0 || f.lastNonSystemRole !== "user") failed.push("turn_structure");
   return failed.map((check) => ({ check, signals: v.signals }));
 }

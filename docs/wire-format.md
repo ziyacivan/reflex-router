@@ -903,9 +903,10 @@ The startup version check is only a hint. The worker therefore verifies the shap
 | `session_id` | `x-claude-code-session-id` present, or `metadata.user_id` parses to JSON with `session_id`; when both exist they are equal |
 | `client_identity` | system text contains `x-anthropic-billing-header:` |
 | `subagent_signals` | header `x-claude-code-agent-id` present ⇔ `cc_is_subagent=true` present; the optional agent-prompt marker, when seen, only on a subagent |
-| `system_messages_beta` | `role:"system"` messages present ⇒ the `mid-conversation-system-*` beta is present (one-way: side calls carry the beta without system messages) |
 | `turn_structure` | at least one non-system message, and the last one has `role:"user"` |
 
 Dropped after the interactive capture: "main-chat requests carry `extended-cache-ttl-*`" (the compaction request lacks it, which would have degraded normal sessions).
+
+Dropped at 2.1.299: `system_messages_beta` ("`role:\"system\"` messages present ⇒ the `mid-conversation-system-*` beta is present"). From 2.1.299 Claude Code still sends `role:"system"` messages but no longer sends `mid-conversation-system-2026-04-07` (the only beta difference from 2.1.296 in a 2.1.300 `sdk-cli` capture, 2026-10-15); the API accepts them without it. Every 2.1.299/2.1.300 session had degraded to shadow on this check (decision logs 2026-10-14/15).
 
 The version check is separate and only ever a hint: same major, different minor/patch → warn; different major → degrade to shadow; unparseable → warn. Passing assertions on an unknown minor version continue normally; failing assertions on a matching version still degrade.

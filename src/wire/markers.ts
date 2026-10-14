@@ -5,7 +5,6 @@
 /** Request headers. */
 export const HEADER_SESSION_ID = "x-claude-code-session-id"; // every request; == metadata.user_id.session_id == hook session_id
 export const HEADER_AGENT_ID = "x-claude-code-agent-id"; // subagent requests only; == hook agent_id (sonnet-agent-run.subagent-*, interactive.subagent-*)
-export const BETA_MID_CONVERSATION_SYSTEM = "mid-conversation-system-"; // prefix; allows role:"system" messages
 export const BETA_EXTENDED_CACHE_TTL = "extended-cache-ttl-"; // prefix; 1-hour cache writes (main chat, not subagents, not compaction)
 
 /** `user-agent: claude-cli/2.1.277 (external, cli)`. The HEAD /api/hello probe carries `Bun/…` instead. */
