@@ -6,6 +6,24 @@
 
 _Nothing yet._
 
+## 0.11.2 — 2026-10-15
+
+### Fixed
+
+- **Sessions on Claude Code 2.1.299 and later were never routed.** From 2.1.299 Claude Code still sends `role:"system"`
+  messages but no longer sends the `mid-conversation-system-2026-04-07` beta, and reflex's runtime shape check required
+  that beta whenever such messages were present. Almost every session failed the check and ran as `shadow`: requests
+  went out unchanged on the model Claude Code asked for, so nothing broke, but nothing was routed either. The check is
+  removed (`docs/wire-format.md` §10); the rewrite that folds `role:"system"` messages for a target model never depended
+  on the beta.
+
+### Changed
+
+- Claude Code 2.1.300 is a tested version: a `claude -p` capture with a subagent (Opus 5.5, `sdk-cli`) differs from
+  2.1.296 only by the missing beta above. Only the main chat's and the subagent's first requests were kept (the capture
+  stopped at its cost cap). 2.1.299 was not captured. Pricing re-verified against Anthropic's pricing page (2026-10-15);
+  no price changed.
+
 ## 0.11.1 — 2026-10-10
 
 ### Changed
