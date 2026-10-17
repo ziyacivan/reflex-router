@@ -6,6 +6,14 @@
 
 _Nothing yet._
 
+## 0.11.3 — 2026-10-17
+
+### Changed
+
+- Claude Code 2.1.302 is a tested version: a `claude -p` capture with a subagent (Sonnet 5.5, `sdk-cli`) shows nothing
+  reflex reads that differs from 2.1.300, and real 2.1.301 and 2.1.302 sessions in the decision log all passed the shape
+  checks. 2.1.301 was not captured. Pricing re-verified against Anthropic's pricing page (2026-10-17); no price changed.
+
 ## 0.11.2 — 2026-10-15
 
 ### Fixed
